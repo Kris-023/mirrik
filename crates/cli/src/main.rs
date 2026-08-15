@@ -97,6 +97,63 @@ fn backend() -> Result<impl MirrorBackend> {
 #[cfg(not(any(target_os = "linux", target_os = "windows")))]
 compile_error!("no backend for this operating system yet (see windows-portierung.md)");
 
+/// Was this started by double-clicking the file rather than from a shell?
+///
+/// Windows gives a double-clicked console program a console of its very own, and this
+/// program is then the only thing attached to it. Started from an existing shell, that
+/// shell is attached too, so the count is at least two.
+///
+/// Worth the check because the alternative is a black window that flashes up and vanishes
+/// with a usage message nobody can read — a rotten first impression for someone who just
+/// downloaded the thing and picked the file without the `-gui` in its name.
+#[cfg(target_os = "windows")]
+fn launched_from_explorer() -> bool {
+    use windows::Win32::System::Console::GetConsoleProcessList;
+    let mut pids = [0u32; 2];
+    unsafe { GetConsoleProcessList(&mut pids) == 1 }
+}
+
+/// The window binary next door, if it is there at all.
+#[cfg(target_os = "windows")]
+fn gui_beside_us() -> Option<std::path::PathBuf> {
+    let gui = std::env::current_exe()
+        .ok()?
+        .with_file_name("mirrik-gui.exe");
+    gui.is_file().then_some(gui)
+}
+
+/// Drops the console window Windows handed us on the way in.
+///
+/// It cannot be prevented outright — a console program gets its console before any of this
+/// code runs, so a brief flash remains. Avoiding even that would mean building as a GUI
+/// subsystem binary and re-attaching to the parent console when run from a shell, which
+/// buys a few milliseconds at the price of a command line that no longer behaves like one.
+#[cfg(target_os = "windows")]
+fn drop_the_console() {
+    use windows::Win32::System::Console::GetConsoleWindow;
+    use windows::Win32::UI::WindowsAndMessaging::{ShowWindow, SW_HIDE};
+
+    unsafe {
+        let console = GetConsoleWindow();
+        if !console.is_invalid() {
+            let _ = ShowWindow(console, SW_HIDE);
+        }
+    }
+}
+
+/// Hands over to the window next door, so the double-click does something useful.
+#[cfg(target_os = "windows")]
+fn open_the_window(gui: std::path::PathBuf) -> Result<()> {
+    use anyhow::Context;
+    // Console first: the window takes a moment to appear, and until then this black box
+    // would be the only thing on screen.
+    drop_the_console();
+    std::process::Command::new(&gui)
+        .spawn()
+        .with_context(|| format!("cannot start {}", gui.display()))?;
+    Ok(())
+}
+
 fn json_device(d: &Device) -> serde_json::Value {
     serde_json::json!({
         "id": d.id.0,
@@ -109,6 +166,20 @@ fn json_device(d: &Device) -> serde_json::Value {
 }
 
 fn main() -> Result<()> {
+    // Someone who downloaded this and double-clicked the file without `-gui` in its name
+    // gets the window instead of a black box. Only with no arguments at all: `hold` and
+    // every real command must keep working exactly as before.
+    //
+    // The GUI is looked up before the console is touched — if there is none, the usage
+    // message stays readable rather than being hidden along with the window.
+    #[cfg(target_os = "windows")]
+    if std::env::args_os().len() == 1 && launched_from_explorer() {
+        if let Some(gui) = gui_beside_us() {
+            open_the_window(gui)?;
+            return Ok(());
+        }
+    }
+
     let cli = Cli::parse();
 
     // Handled before the backend exists: the holder owns no shared state and must not

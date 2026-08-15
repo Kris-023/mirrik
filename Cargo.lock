@@ -177,6 +177,7 @@ dependencies = [
  "mirrik-core",
  "clap",
  "serde_json",
+ "windows",
 ]
 
 [[package]]

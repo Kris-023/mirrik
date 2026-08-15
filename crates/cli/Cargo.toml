@@ -18,3 +18,9 @@ mirrik-backend-linux.workspace = true
 
 [target.'cfg(target_os = "windows")'.dependencies]
 mirrik-backend-windows.workspace = true
+# Only to tell a double-click apart from a shell invocation and to get rid of the console
+# window that comes with it, see main().
+windows = { version = "0.62.2", features = [
+    "Win32_System_Console",
+    "Win32_UI_WindowsAndMessaging",
+] }
