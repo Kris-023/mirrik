@@ -1,0 +1,20 @@
+[workspace]
+resolver = "2"
+members = ["core", "backend-linux", "cli", "gui"]
+
+# Gemeinsame Abhängigkeiten an einer Stelle, damit Linux- und Windows-Backend
+# nicht auseinanderdriften.
+[workspace.dependencies]
+anyhow = "1"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+clap = { version = "4", features = ["derive"] }
+
+mirrik-core = { path = "core" }
+mirrik-backend-linux = { path = "backend-linux" }
+
+[profile.release]
+# Kleines, schnell startendes Werkzeug — es wird per Tastenkürzel aufgerufen.
+opt-level = "s"
+lto = true
+strip = true

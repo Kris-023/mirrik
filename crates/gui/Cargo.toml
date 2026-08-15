@@ -1,0 +1,25 @@
+[package]
+name = "mirrik-gui"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "mirrik-gui"
+path = "src/main.rs"
+
+[dependencies]
+anyhow.workspace = true
+mirrik-core.workspace = true
+
+# glow statt wgpu: das Fenster soll auf Tastendruck sofort da sein, nicht erst einen
+# Grafik-Stack hochfahren. default-features=false wirft u. a. die Persistenz raus,
+# die hier nichts zu speichern hätte.
+eframe = { version = "0.36", default-features = false, features = [
+    "glow",
+    "wayland",
+    "x11",
+    "default_fonts",
+] }
+
+[target.'cfg(target_os = "linux")'.dependencies]
+mirrik-backend-linux.workspace = true
