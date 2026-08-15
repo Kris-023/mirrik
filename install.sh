@@ -2,9 +2,10 @@
 #
 # Guided setup for Mirrik on Linux.
 #
-# Installs the two binaries, adds a desktop entry, and helps you bind the window to a
-# key combination in your compositor. Every step asks first, and nothing is written to a
-# config file without showing you the exact lines beforehand.
+# Checks what Mirrik actually needs at runtime, installs the two binaries, adds a desktop
+# entry, and works out the key-binding line for your compositor or desktop. Every step
+# asks first, and nothing is written to a config file without showing you the exact lines
+# beforehand.
 #
 # Usage:  ./install.sh
 
@@ -50,6 +51,36 @@ confirm() {  # confirm <question> [y|n]  -> exit status
     done
 }
 
+have() { command -v "$1" >/dev/null 2>&1; }
+
+# Appends a block to a config file, but only once. The markers are there so both this
+# script and a human can find it again.
+#
+# Two spellings, because not every config file is shell-shaped: awesome's rc.lua is Lua,
+# where `#` is the length operator and a `#` comment is a syntax error that takes the
+# whole desktop down with it. Only the text between the dashes is searched for, so either
+# spelling is recognised.
+MARK_TEXT='--- Mirrik ---'
+MARK_OPEN="# $MARK_TEXT"
+MARK_CLOSE='# --- end Mirrik ---'
+LUA_OPEN="-- $MARK_TEXT"
+LUA_CLOSE='-- --- end Mirrik ---'
+
+append_block() {  # append_block <file> <block> <what to say afterwards>
+    local file="$1" block="$2" done_msg="$3"
+    # -e, because the marker starts with a dash and grep would read it as an option.
+    if [ -f "$file" ] && grep -qFe "$MARK_TEXT" "$file"; then
+        warn "  $file already has a Mirrik block. Leaving it alone."
+        dim "  Delete the old block by hand first if you want to change the key."
+        return 0
+    fi
+    confirm "  Append them to $file?" || { dim '  Not written. Copy them in whenever you like.'; return 0; }
+    mkdir -p "$(dirname "$file")"
+    printf '\n%s\n' "$block" >> "$file"
+    ok "  $done_msg"
+    dim "  To undo: delete the block between the two '# --- Mirrik ---' lines."
+}
+
 # ---------------------------------------------------------------- 0. what this is
 
 cat <<'BANNER'
@@ -58,42 +89,148 @@ cat <<'BANNER'
   Play the same sound on two or more output devices at once.
 
   This script will, asking before each step:
-    1. check that PipeWire is running, because Mirrik needs it
+    1. check that everything Mirrik needs at runtime is present
     2. install mirrik and mirrik-gui into a directory on your PATH
     3. add a desktop entry so it shows up in your application launcher
-    4. help you bind the window to a key combination
+    4. work out the key-binding line for your compositor or desktop
 
-  No root, no system service, nothing outside your home directory.
+  No root except where you explicitly allow it, no system service, nothing
+  outside your home directory.
 
 BANNER
 
-# ---------------------------------------------------------------- 1. PipeWire
+# ---------------------------------------------------------------- 1. runtime needs
 
-heading '1. Checking your audio server'
+heading '1. What Mirrik needs to be there'
 
-if ! command -v pactl >/dev/null 2>&1; then
-    err '  pactl is not installed, so the audio server cannot be identified.'
-    dim '  Install pipewire-pulse (it provides pactl) and run this again.'
-    exit 1
+# Mirrik drives PipeWire through its own command line tools rather than linking against
+# libpipewire, so these four have to exist. They are easy to miss: a system can be running
+# PipeWire perfectly and still not have pw-cli installed, because several distributions
+# split the daemon and its tools into separate packages.
+missing=()
+for tool in pactl pw-cli pw-dump pw-metadata; do
+    have "$tool" || missing+=("$tool")
+done
+
+# Distribution family, for naming the packages rather than guessing at them.
+distro_id=''; distro_like=''; distro_name='your distribution'
+if [ -r /etc/os-release ]; then
+    # shellcheck disable=SC1091
+    . /etc/os-release
+    distro_id="${ID:-}"; distro_like="${ID_LIKE:-}"; distro_name="${PRETTY_NAME:-${NAME:-$distro_id}}"
 fi
 
-server="$(pactl info 2>/dev/null | sed -n 's/^Server Name: //p')"
-if printf '%s' "$server" | grep -qi pipewire; then
-    ok "  PipeWire it is: $server"
+install_hint=''
+case " $distro_id $distro_like " in
+    *" debian "*|*" ubuntu "*)
+        install_hint='sudo apt install pipewire pipewire-pulse pipewire-bin pulseaudio-utils' ;;
+    *" fedora "*|*" rhel "*|*" centos "*)
+        install_hint='sudo dnf install pipewire pipewire-pulseaudio pipewire-utils pulseaudio-utils' ;;
+    *" arch "*|*" archlinux "*|*" manjaro "*|*" endeavouros "*)
+        install_hint='sudo pacman -S --needed pipewire pipewire-pulse libpulse' ;;
+    *" suse "*|*" opensuse "*|*" opensuse-tumbleweed "*|*" opensuse-leap "*)
+        install_hint='sudo zypper install pipewire pipewire-pulseaudio pipewire-tools pulseaudio-utils' ;;
+    *" alpine "*)
+        install_hint='sudo apk add pipewire pipewire-pulse pipewire-tools pulseaudio-utils' ;;
+    *" void "*)
+        install_hint='sudo xbps-install -S pipewire pulseaudio-utils' ;;
+    *" gentoo "*)
+        install_hint='sudo emerge media-video/pipewire media-sound/pulseaudio-daemon' ;;
+    *" nixos "*)
+        install_hint='NIXOS' ;;
+esac
+
+# Silverblue, Kinoite, Bazzite and the rest of the image-based Fedoras look exactly like
+# Fedora in os-release, but dnf cannot write to /usr there. They layer packages instead,
+# and the change only lands after a reboot.
+if [ -e /run/ostree-booted ] && have rpm-ostree; then
+    install_hint='sudo rpm-ostree install pipewire pipewire-pulseaudio pipewire-utils pulseaudio-utils'
+fi
+
+if [ ${#missing[@]} -eq 0 ]; then
+    ok "  All four present: pactl, pw-cli, pw-dump, pw-metadata"
 else
-    warn "  Your audio server reports itself as: ${server:-unknown}"
+    warn "  Missing: ${missing[*]}"
     say ''
-    dim '  Mirrik requires PipeWire and refuses to run on plain PulseAudio. That is'
-    dim '  deliberate: there, a loopback belongs to the daemon and would survive a'
-    dim '  crash of this tool — which breaks its one promise, that switching off'
-    dim '  leaves nothing behind.'
+    dim "  Detected: $distro_name"
     say ''
-    confirm '  Install anyway?' n || exit 1
+    if [ "$install_hint" = NIXOS ]; then
+        dim '  On NixOS nothing gets installed imperatively. Put this in your configuration'
+        dim '  and rebuild:'
+        say ''
+        say '    services.pipewire = {'
+        say '      enable = true;'
+        say '      pulse.enable = true;   # provides pactl'
+        say '    };'
+        say '    environment.systemPackages = [ pkgs.pipewire ];   # provides pw-cli and friends'
+        say ''
+        confirm '  Continue anyway?' n || exit 1
+    elif [ -n "$install_hint" ]; then
+        dim '  On this system that is:'
+        say "    $install_hint"
+        say ''
+        if confirm '  Run it now? (asks for your password)' n; then
+            eval "$install_hint"
+            missing=()
+            for tool in pactl pw-cli pw-dump pw-metadata; do
+                have "$tool" || missing+=("$tool")
+            done
+            if [ ${#missing[@]} -eq 0 ]; then
+                ok '  All four present now.'
+            else
+                warn "  Still missing: ${missing[*]}"
+                confirm '  Continue anyway?' n || exit 1
+            fi
+        else
+            dim '  Skipped. Mirrik will refuse to start until they are there.'
+            confirm '  Continue anyway?' n || exit 1
+        fi
+    else
+        dim '  Install PipeWire, its PulseAudio layer and its command line tools with your'
+        dim '  package manager. The tools are often a separate package - Debian calls it'
+        dim '  pipewire-bin, Fedora pipewire-utils, and pactl usually lives in something'
+        dim '  named after PulseAudio even on a PipeWire system.'
+        say ''
+        confirm '  Continue anyway?' n || exit 1
+    fi
 fi
 
-# ---------------------------------------------------------------- 2. binaries
+# ---------------------------------------------------------------- 2. is it PipeWire
 
-heading '2. The program itself'
+heading '2. Checking your audio server'
+
+if have pactl; then
+    server="$(pactl info 2>/dev/null | sed -n 's/^Server Name: //p' || true)"
+    if printf '%s' "$server" | grep -qi pipewire; then
+        ok "  PipeWire it is: $server"
+    elif [ -z "$server" ]; then
+        warn '  No audio server answered. Is the session running?'
+        dim '  If you are on a fresh install, `systemctl --user status pipewire` is the'
+        dim '  place to look. On some distributions the service needs enabling once:'
+        dim '    systemctl --user enable --now pipewire pipewire-pulse'
+        say ''
+        confirm '  Continue anyway?' n || exit 1
+    else
+        warn "  Your audio server reports itself as: $server"
+        say ''
+        dim '  Mirrik requires PipeWire and refuses to run on plain PulseAudio. That is'
+        dim '  deliberate: there, a loopback belongs to the daemon and would survive a'
+        dim '  crash of this tool - which breaks its one promise, that switching off'
+        dim '  leaves nothing behind.'
+        say ''
+        dim '  Most distributions can swap PulseAudio for PipeWire without touching'
+        dim '  anything else; the package to look for is pipewire-pulse or'
+        dim '  pipewire-pulseaudio.'
+        say ''
+        confirm '  Install anyway?' n || exit 1
+    fi
+else
+    warn '  pactl is not installed, so the audio server cannot be identified. Skipping.'
+fi
+
+# ---------------------------------------------------------------- 3. binaries
+
+heading '3. The program itself'
 
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source_dir=''
@@ -106,7 +243,7 @@ done
 
 if [ -z "$source_dir" ]; then
     warn '  Could not find built binaries next to this script.'
-    if command -v cargo >/dev/null 2>&1; then
+    if have cargo; then
         dim '  Rust is installed, so they can be built now. The first build takes a few'
         dim '  minutes and needs an internet connection for the dependencies.'
         if confirm '  Build them now?'; then
@@ -119,7 +256,10 @@ if [ -z "$source_dir" ]; then
         fi
     else
         err '  Rust is not installed either, so there is nothing to install.'
-        dim '  Install Rust from https://rustup.rs and run this script again.'
+        dim '  Install it from https://rustup.rs (or your package manager) and run this'
+        dim '  script again. Building also needs a C linker and the ALSA and X11/Wayland'
+        dim '  development headers, which your distribution groups under a name like'
+        dim '  build-essential, base-devel or @development-tools.'
         exit 1
     fi
 fi
@@ -136,22 +276,37 @@ case ":$PATH:" in
     *)
         say ''
         warn "  $bindir is not on your PATH."
-        dim '  Add this to your shell startup file (~/.bashrc, ~/.zshrc, ~/.config/fish/config.fish):'
-        say "    export PATH=\"\$PATH:$bindir\""
+        # Naming the right file matters more than it looks: told "your shell startup
+        # file", people edit .bashrc while running zsh and then wonder.
+        case "$(basename "${SHELL:-sh}")" in
+            zsh)  rc="$HOME/.zshrc";    line="export PATH=\"\$PATH:$bindir\"" ;;
+            fish) rc="${XDG_CONFIG_HOME:-$HOME/.config}/fish/config.fish"
+                  line="fish_add_path $bindir" ;;
+            *)    rc="$HOME/.bashrc";   line="export PATH=\"\$PATH:$bindir\"" ;;
+        esac
+        dim "  Your shell looks like $(basename "${SHELL:-sh}"), so this goes in $rc:"
+        say "    $line"
+        say ''
+        if confirm "  Append it to $rc?" n; then
+            mkdir -p "$(dirname "$rc")"
+            printf '\n%s\n%s\n' "$MARK_OPEN" "$line" >> "$rc"
+            printf '%s\n' "$MARK_CLOSE" >> "$rc"
+            ok '  Appended. Open a new terminal for it to take effect.'
+        fi
         ;;
 esac
 
-# ---------------------------------------------------------------- 3. desktop entry
+# ---------------------------------------------------------------- 4. desktop entry
 
-heading '3. Application launcher entry'
+heading '4. Application launcher entry'
 
 dim '  A desktop entry makes the window findable in rofi, wofi, the GNOME overview,'
 dim '  the KDE launcher and everything else that reads them. It is one small text'
 dim '  file and costs nothing.'
 say ''
 
+apps="${XDG_DATA_HOME:-$HOME/.local/share}/applications"
 if confirm '  Add it?'; then
-    apps="${XDG_DATA_HOME:-$HOME/.local/share}/applications"
     mkdir -p "$apps"
     cat > "$apps/mirrik.desktop" <<DESKTOP
 [Desktop Entry]
@@ -164,40 +319,58 @@ Categories=AudioVideo;Audio;Settings;
 StartupWMClass=mirrik
 Keywords=audio;output;mirror;dual;speakers;headphones;
 DESKTOP
-    command -v update-desktop-database >/dev/null 2>&1 && update-desktop-database "$apps" 2>/dev/null || true
+    have update-desktop-database && update-desktop-database "$apps" 2>/dev/null || true
     ok "  Written to $apps/mirrik.desktop"
 else
     dim '  Skipped.'
 fi
 
-# ---------------------------------------------------------------- 4. key binding
+# ---------------------------------------------------------------- 5. key binding
 
-heading '4. Opening the window with a key'
+heading '5. Opening the window with a key'
 
 dim '  This is how Mirrik is meant to be used: one key combination, the window opens'
 dim '  over whatever you were doing, you change a destination, Esc closes it again.'
 say ''
-dim '  Your compositor owns the key bindings, not Mirrik — so this step works out the'
-dim '  right line for your setup and you decide whether to write it anywhere.'
+dim '  Your compositor or desktop owns the key bindings, not Mirrik - so this step'
+dim '  works out the right line for your setup and you decide what happens to it.'
 say ''
 
-say '  Which one are you running?'
-say '    1) Hyprland'
-say '    2) Sway'
-say '    3) i3'
-say '    4) Something else (GNOME, KDE, XFCE, awesome, ...)'
-say '    5) Skip this step'
-wm="$(ask '  Choice' '1')"
+# A guess, so the menu opens on the likely answer instead of always on 1.
+guess=11
+for probe in "${XDG_CURRENT_DESKTOP:-}" "${DESKTOP_SESSION:-}"; do
+    case "${probe,,}" in
+        *hyprland*) guess=1 ;;
+        *sway*)     guess=2 ;;
+        *i3*)       guess=3 ;;
+        *niri*)     guess=4 ;;
+        *river*)    guess=5 ;;
+        *awesome*)  guess=6 ;;
+        *bspwm*)    guess=7 ;;
+        *gnome*)    guess=8 ;;
+        *kde*|*plasma*) guess=9 ;;
+        *xfce*)     guess=10 ;;
+    esac
+    [ "$guess" != 11 ] && break
+done
 
-if [ "$wm" = 5 ]; then
-    dim '  Skipped. The command to bind, whenever you get to it, is: mirrik-gui'
+say '  Which one are you running?'
+say '     1) Hyprland            7) bspwm / sxhkd'
+say '     2) Sway                8) GNOME'
+say '     3) i3                  9) KDE Plasma'
+say '     4) niri               10) XFCE'
+say '     5) river              11) Something else'
+say '     6) awesome            12) Skip this step'
+wm="$(ask '  Choice' "$guess")"
+
+if [ "$wm" = 12 ]; then
+    dim '  Skipped. The command to bind, whenever you get to it, is:'
+    say "    $bindir/mirrik-gui"
 else
     say ''
     say '  Which modifiers?'
-    say '    1) Super'
-    say '    2) Super + Shift'
-    say '    3) Alt'
-    say '    4) Ctrl + Alt'
+    say '    1) Super            3) Alt'
+    say '    2) Super + Shift    4) Ctrl + Alt'
     mods="$(ask '  Choice' '2')"
 
     key=''
@@ -209,62 +382,173 @@ else
             warn '  One letter or digit please.'
         fi
     done
+    upper="${key^^}"; lower="${key,,}"
 
-    upper="${key^^}"
-    lower="${key,,}"
-
-    # Same combination, three notations.
+    # The same combination, written six different ways. Every project picked its own
+    # spelling for the same three keys, so this is a translation table and nothing more.
     case "$mods" in
-        1) hypr_mod='SUPER';       sway_mod='Mod4';          human='Super' ;;
-        2) hypr_mod='SUPER SHIFT'; sway_mod='Mod4+Shift';    human='Super+Shift' ;;
-        3) hypr_mod='ALT';         sway_mod='Mod1';          human='Alt' ;;
-        4) hypr_mod='CTRL ALT';    sway_mod='Control+Mod1';  human='Ctrl+Alt' ;;
-        *) hypr_mod='SUPER SHIFT'; sway_mod='Mod4+Shift';    human='Super+Shift' ;;
+        1) hypr='SUPER';       sway='Mod4';         niri='Super'
+           lua='"Mod4"';       sx='super';          gtk='<Super>';          human='Super' ;;
+        3) hypr='ALT';         sway='Mod1';         niri='Alt'
+           lua='"Mod1"';       sx='alt';            gtk='<Alt>';            human='Alt' ;;
+        4) hypr='CTRL ALT';    sway='Control+Mod1'; niri='Ctrl+Alt'
+           lua='"Control", "Mod1"'; sx='ctrl + alt'; gtk='<Control><Alt>';  human='Ctrl+Alt' ;;
+        *) hypr='SUPER SHIFT'; sway='Mod4+Shift';   niri='Super+Shift'
+           lua='"Mod4", "Shift"'; sx='super + shift'; gtk='<Super><Shift>'; human='Super+Shift' ;;
     esac
 
-    marker='# --- Mirrik ---'
-    snippet=''
-    config=''
+    gui="$bindir/mirrik-gui"
+    conf_home="${XDG_CONFIG_HOME:-$HOME/.config}"
+    snippet=''; config=''; note=''
 
     case "$wm" in
         1)
-            config="${XDG_CONFIG_HOME:-$HOME/.config}/hypr/hyprland.conf"
-            # Wayland compositors place windows themselves, so the rules matter as much
-            # as the binding: without them the window lands wherever the compositor
-            # feels like, tiled in with everything else.
-            snippet="$marker
-bind = $hypr_mod, $upper, exec, $bindir/mirrik-gui
+            config="$conf_home/hypr/hyprland.conf"
+            # Wayland compositors place windows themselves, so the rules matter as much as
+            # the binding: without them the window is tiled in with everything else.
+            snippet="$MARK_OPEN
+bind = $hypr, $upper, exec, $gui
 # Hyprland before 0.49 spells the next two 'windowrulev2'.
 windowrule = float, class:^(mirrik)\$
 windowrule = center, class:^(mirrik)\$
-# --- end Mirrik ---"
-            ;;
+$MARK_CLOSE" ;;
         2)
-            config="${XDG_CONFIG_HOME:-$HOME/.config}/sway/config"
-            snippet="$marker
-bindsym $sway_mod+$lower exec $bindir/mirrik-gui
+            config="$conf_home/sway/config"
+            snippet="$MARK_OPEN
+bindsym $sway+$lower exec $gui
 for_window [app_id=\"mirrik\"] floating enable, move position center
-# --- end Mirrik ---"
-            ;;
+$MARK_CLOSE" ;;
         3)
-            config="${XDG_CONFIG_HOME:-$HOME/.config}/i3/config"
-            snippet="$marker
-bindsym $sway_mod+$lower exec --no-startup-id $bindir/mirrik-gui
+            config="$conf_home/i3/config"
+            snippet="$MARK_OPEN
+bindsym $sway+$lower exec --no-startup-id $gui
 for_window [class=\"mirrik\"] floating enable, move position center
-# --- end Mirrik ---"
-            ;;
+$MARK_CLOSE" ;;
+        4)
+            config="$conf_home/niri/config.kdl"
+            # niri wants its binds inside the one binds block, so this cannot simply be
+            # appended to the end of the file the way the others can.
+            snippet="binds {
+    $niri+$upper { spawn \"$gui\"; }
+}
+
+window-rule {
+    match app-id=\"^mirrik\$\"
+    open-floating true
+}"
+            note="niri keeps all binds in a single 'binds { }' block, so paste the bind
+  line inside the one you already have rather than appending a second block.
+  The window-rule goes at the top level." ;;
+        5)
+            config="$conf_home/river/init"
+            snippet="$MARK_OPEN
+riverctl map normal $sway $upper spawn \"$gui\"
+riverctl rule-add -app-id 'mirrik' float
+$MARK_CLOSE"
+            note="river's init is a shell script and has to stay executable:
+  chmod +x $config" ;;
+        6)
+            config="$conf_home/awesome/rc.lua"
+            # This is the modern append API; it works alongside whatever globalkeys table
+            # the config already has, which the older awful.util.table.join style does not.
+            snippet="$LUA_OPEN
+awful.keyboard.append_global_keybindings({
+    awful.key({ $lua }, \"$lower\", function() awful.spawn(\"$gui\") end,
+              { description = \"open Mirrik\", group = \"launcher\" }),
+})
+awful.rules.rules[#awful.rules.rules + 1] = {
+    rule = { class = \"mirrik\" },
+    properties = { floating = true, placement = awful.placement.centered },
+}
+$LUA_CLOSE"
+            note="This is Lua, and it uses awesome's newer append API - it sits happily
+  next to an existing globalkeys table instead of replacing it. Needs
+  awesome 4.3 or newer. Append it at the end of rc.lua, after awful is
+  required." ;;
+        7)
+            config="$conf_home/sxhkd/sxhkdrc"
+            snippet="$MARK_OPEN
+$sx + $lower
+    $gui
+$MARK_CLOSE"
+            note="Reload sxhkd afterwards: pkill -USR1 -x sxhkd
+  For the window to float, bspwm needs this in its own bspwmrc:
+    bspc rule -a mirrik state=floating center=on" ;;
+        8)
+            say ''
+            dim '  GNOME keeps custom shortcuts in dconf. These three commands add one'
+            dim '  without going through the settings window:'
+            say ''
+            path='/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/mirrik/'
+            schema='org.gnome.settings-daemon.plugins.media-keys.custom-keybinding'
+            say "    gsettings set $schema:$path name 'Mirrik'"
+            say "    gsettings set $schema:$path command '$gui'"
+            say "    gsettings set $schema:$path binding '$gtk$lower'"
+            say ''
+            dim '  ... plus one more to put it in the list of custom shortcuts, which is'
+            dim '  the fiddly part, because that list must not be overwritten.'
+            say ''
+            if have gsettings && confirm '  Do all of that now?'; then
+                gsettings set "$schema:$path" name 'Mirrik'
+                gsettings set "$schema:$path" command "$gui"
+                gsettings set "$schema:$path" binding "$gtk$lower"
+                current="$(gsettings get org.gnome.settings-daemon.plugins.media-keys custom-keybindings)"
+                if printf '%s' "$current" | grep -qF "$path"; then
+                    ok '  Already in the list; the three values were refreshed.'
+                else
+                    if [ "$current" = '@as []' ] || [ "$current" = '[]' ]; then
+                        updated="['$path']"
+                    else
+                        updated="${current%]}, '$path']"
+                    fi
+                    gsettings set org.gnome.settings-daemon.plugins.media-keys custom-keybindings "$updated"
+                    ok "  Done. $human+$upper opens the window."
+                fi
+                dim '  To undo: Settings > Keyboard > Custom Shortcuts, and remove "Mirrik".'
+            else
+                dim '  Not run. Settings > Keyboard > View and Customise Shortcuts >'
+                dim "  Custom Shortcuts > + does the same thing by hand: name Mirrik,"
+                dim "  command $gui, shortcut $human+$upper."
+            fi ;;
+        9)
+            say ''
+            dim '  KDE stores shortcuts in a way that is not safe to edit from a script'
+            dim '  while Plasma is running - it caches the file and writes it back out.'
+            dim '  So this one is by hand, and it is three clicks:'
+            say ''
+            say '    System Settings > Keyboard > Shortcuts > Add > Command'
+            say "    Command:   $gui"
+            say "    Shortcut:  $human+$upper"
+            say ''
+            dim '  For the window to float and centre: right-click its title bar > More'
+            dim '  Actions > Configure Special Window Settings, match on the window class'
+            dim '  "mirrik".' ;;
+        10)
+            say ''
+            dim '  XFCE keeps custom shortcuts in xfconf. One command adds this one:'
+            say ''
+            say "    xfconf-query -c xfce4-keyboard-shortcuts \\"
+            say "      -p '/commands/custom/$gtk$lower' -n -t string -s '$gui'"
+            say ''
+            if have xfconf-query && confirm '  Run it now?'; then
+                xfconf-query -c xfce4-keyboard-shortcuts \
+                    -p "/commands/custom/$gtk$lower" -n -t string -s "$gui"
+                ok "  Done. $human+$upper opens the window."
+                dim '  To undo: Settings > Keyboard > Application Shortcuts, and remove it.'
+            else
+                dim '  Not run. Settings > Keyboard > Application Shortcuts > Add does the'
+                dim '  same thing by hand.'
+            fi ;;
         *)
             say ''
-            dim '  Every desktop environment has this somewhere under Settings, usually'
-            dim '  "Keyboard" and then "Custom Shortcuts". Two things to put in:'
+            dim '  Every desktop has this somewhere under Settings, usually "Keyboard" and'
+            dim '  then "Custom Shortcuts". Two things to put in:'
             say ''
             say "    Shortcut:  $human+$upper"
-            say "    Command:   $bindir/mirrik-gui"
+            say "    Command:   $gui"
             say ''
-            dim '  On GNOME:  Settings > Keyboard > View and Customise Shortcuts >'
-            dim '             Custom Shortcuts > +'
-            dim '  On KDE:    System Settings > Shortcuts > Add Command'
-            ;;
+            dim '  If your window manager reads a config file instead, the window class to'
+            dim '  match for a floating, centred window is: mirrik' ;;
     esac
 
     if [ -n "$snippet" ]; then
@@ -273,39 +557,39 @@ for_window [class=\"mirrik\"] floating enable, move position center
         say ''
         printf '%s\n' "$snippet" | sed 's/^/    /'
         say ''
+        [ -n "$note" ] && { dim "  $note"; say ''; }
 
         dim '  How do you keep that config file?'
         say '    1) I edit it by hand'
-        say '    2) It is generated for me (Nix, Home Manager, a dotfile templater, ...)'
+        say '    2) It is generated for me (Nix, Home Manager, chezmoi, a templater, ...)'
         kind="$(ask '  Choice' '1')"
 
         if [ "$kind" = 1 ]; then
-            if [ -f "$config" ] && grep -qF "$marker" "$config"; then
-                warn "  $config already has a Mirrik block. Leaving it alone."
-                dim '  Remove the old block by hand first if you want to change the key.'
-            elif confirm "  Append them to $config?"; then
-                mkdir -p "$(dirname "$config")"
-                printf '\n%s\n' "$snippet" >> "$config"
-                ok "  Appended. Reload your compositor and $human+$upper opens the window."
-                dim "  To undo: delete the block between the two '# --- Mirrik ---' lines."
+            if [ "$wm" = 4 ]; then
+                # niri's single binds block makes blind appending wrong, see the note.
+                dim '  Not appending automatically - see the note above. Paste it yourself.'
             else
-                dim '  Not written. Copy them in whenever you like.'
+                append_block "$config" "$snippet" \
+                    "Appended. Reload your compositor and $human+$upper opens the window."
             fi
         else
-            dim '  Then this script will not touch it — a generated file would overwrite'
+            dim '  Then this script will not touch it - a generated file would overwrite'
             dim '  whatever it appended on the next rebuild. Put the lines above into'
             dim '  whatever generates it.'
         fi
     fi
 fi
 
-# ---------------------------------------------------------------- 5. does it work
+# ---------------------------------------------------------------- 6. does it work
 
-heading '5. Checking it actually works'
+heading '6. Checking it actually works'
 
 if ! devices="$("$bindir/mirrik" devices 2>&1)"; then
     err '  Mirrik could not list your output devices:'
     printf '%s\n' "$devices" | sed 's/^/    /'
+    say ''
+    dim '  If it is complaining about PipeWire, go back to step 1 - one of the four'
+    dim '  tools is probably still missing.'
     exit 1
 fi
 
@@ -330,6 +614,6 @@ dim '  Closing the window     leaves the mirror running. `x` stops it.'
 say ''
 dim '  To undo all of this:'
 say "    rm $bindir/mirrik $bindir/mirrik-gui"
-say "    rm ${XDG_DATA_HOME:-$HOME/.local/share}/applications/mirrik.desktop"
+say "    rm $apps/mirrik.desktop"
 dim "    and delete the '# --- Mirrik ---' block from your compositor config"
 say ''

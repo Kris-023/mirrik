@@ -140,20 +140,38 @@ Two practical notes:
 
 ## Install — Linux
 
-Requires **PipeWire** (with `pipewire-pulse`). Check with:
+Requires **PipeWire**, and four of its command line tools: `pactl`, `pw-cli`, `pw-dump` and
+`pw-metadata`. Mirrik drives PipeWire through those rather than linking against
+`libpipewire`, and several distributions ship the daemon and its tools as separate packages
+— so a system can be running PipeWire perfectly and still be missing `pw-cli`.
 
 ```sh
 pactl info | grep 'Server Name'      # should mention PipeWire
 ```
 
-There is a guided setup script. It installs the two binaries, adds a desktop entry, and
-works out the exact key-binding line for your compositor — Hyprland, Sway and i3 by name,
-with instructions for everything else. It shows you the lines before writing anything, and
-leaves generated configs (Nix, Home Manager) alone.
+There is a guided setup script:
 
 ```sh
 ./install.sh
 ```
+
+It checks those four tools and, if any are missing, names the exact package command for
+your distribution (Debian, Ubuntu and derivatives, Fedora and derivatives — including the
+image-based ones that need `rpm-ostree` — Arch, openSUSE, Alpine, Void, Gentoo, NixOS).
+Then it installs the two binaries, adds a desktop entry, and works out the key-binding line
+for your setup:
+
+| | |
+|---|---|
+| **Hyprland, Sway, i3, river, bspwm/sxhkd** | exact config lines, offered for appending |
+| **awesome** | the same, in Lua, using the modern `append_global_keybindings` API |
+| **niri** | the lines, but never appended — niri keeps all binds in one block |
+| **GNOME, XFCE** | run for you via `gsettings` / `xfconf-query`, if you say yes |
+| **KDE Plasma** | by hand, because Plasma rewrites its own shortcut file underneath you |
+
+It shows every line before writing anything, marks what it added so you can find it again,
+never writes the same block twice, and leaves generated configs (Nix, Home Manager,
+chezmoi) alone — appending to those lasts until the next rebuild.
 
 <details>
 <summary>Or do it by hand</summary>
