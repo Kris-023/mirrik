@@ -79,11 +79,8 @@ may differ between them and are converted for you.
 
 ## Install — Windows
 
-There is a guided setup script. It copies the two programs somewhere permanent, offers to
-put them on your `PATH`, and offers to create a Start menu shortcut with a keyboard
-shortcut of your choosing. It asks before every step and needs no administrator rights.
-
-Open PowerShell in the folder you unpacked or cloned into, and run:
+There is a guided setup script. Open PowerShell in the folder you unpacked or cloned into,
+and run:
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File install.ps1
@@ -91,6 +88,30 @@ powershell -ExecutionPolicy Bypass -File install.ps1
 
 The `-ExecutionPolicy Bypass` is not a workaround for anything shady — Windows refuses to
 run *any* unsigned `.ps1` by default, including ones you wrote yourself five minutes ago.
+
+It asks before every step, needs no administrator rights, and:
+
+- checks this machine can run it at all — Windows version, processor architecture against
+  the architecture the binaries were actually built for, and whether there is a real
+  display driver, because the window is drawn with OpenGL and a Remote Desktop session or
+  a driverless fresh install has none. The command line works either way;
+- copies both programs somewhere permanent and shows you their checksums;
+- adds that folder to your `PATH` — through the registry, keeping the entry expandable, so
+  any `%USERPROFILE%`-style entries you already had stay variables instead of being frozen
+  into literal paths;
+- warns if another `mirrik.exe` is already on your `PATH` somewhere else;
+- creates a Start menu shortcut with a hotkey, after checking your existing shortcuts for
+  one that already claims the same combination. Windows hands a duplicate to whichever it
+  finds first and never mentions it.
+
+To undo all of it:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File install.ps1 -Uninstall
+```
+
+That stops any running mirror first — Windows will not delete a running `.exe` — then
+removes the files, the `PATH` entry and the shortcut, asking about each.
 
 <details>
 <summary>Or do it by hand</summary>
