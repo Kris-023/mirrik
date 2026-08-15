@@ -287,10 +287,13 @@ case ":$PATH:" in
         dim "  Your shell looks like $(basename "${SHELL:-sh}"), so this goes in $rc:"
         say "    $line"
         say ''
-        if confirm "  Append it to $rc?" n; then
+        # Guarded like the compositor configs: run twice in the same terminal - where the
+        # PATH has not been picked up yet - and this would otherwise append twice.
+        if [ -f "$rc" ] && grep -qFe "$MARK_TEXT" "$rc"; then
+            dim "  $rc already has a Mirrik block. Open a new terminal to pick it up."
+        elif confirm "  Append it to $rc?" n; then
             mkdir -p "$(dirname "$rc")"
-            printf '\n%s\n%s\n' "$MARK_OPEN" "$line" >> "$rc"
-            printf '%s\n' "$MARK_CLOSE" >> "$rc"
+            printf '\n%s\n%s\n%s\n' "$MARK_OPEN" "$line" "$MARK_CLOSE" >> "$rc"
             ok '  Appended. Open a new terminal for it to take effect.'
         fi
         ;;
