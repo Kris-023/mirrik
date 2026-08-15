@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["core", "backend-linux", "cli", "gui"]
+members = ["core", "backend-linux", "backend-windows", "cli", "gui"]
 
 # Gemeinsame Abhängigkeiten an einer Stelle, damit Linux- und Windows-Backend
 # nicht auseinanderdriften.
@@ -12,6 +12,7 @@ clap = { version = "4", features = ["derive"] }
 
 mirrik-core = { path = "core" }
 mirrik-backend-linux = { path = "backend-linux" }
+mirrik-backend-windows = { path = "backend-windows" }
 
 [profile.release]
 # Kleines, schnell startendes Werkzeug — es wird per Tastenkürzel aufgerufen.

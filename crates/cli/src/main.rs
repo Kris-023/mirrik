@@ -82,7 +82,12 @@ fn backend() -> Result<impl MirrorBackend> {
     mirrik_backend_linux::PipeWireBackend::new()
 }
 
-#[cfg(not(target_os = "linux"))]
+#[cfg(target_os = "windows")]
+fn backend() -> Result<impl MirrorBackend> {
+    mirrik_backend_windows::WasapiBackend::new()
+}
+
+#[cfg(not(any(target_os = "linux", target_os = "windows")))]
 compile_error!("no backend for this operating system yet (see windows-portierung.md)");
 
 fn json_device(d: &Device) -> serde_json::Value {
@@ -117,12 +122,7 @@ fn main() -> Result<()> {
             } else {
                 for d in &devices {
                     let mark = if d.is_default { "*" } else { " " };
-                    println!(
-                        "{mark} {}  [{}]\n    {}",
-                        d.name,
-                        d.transport.label(),
-                        d.id
-                    );
+                    println!("{mark} {}  [{}]\n    {}", d.name, d.transport.label(), d.id);
                 }
             }
         }
@@ -264,11 +264,12 @@ fn report(b: &mut impl MirrorBackend, json: bool) -> Result<()> {
                 println!("Mirroring from: {}", name(&m.source));
                 for t in &targets {
                     let ms = t["latency_ms"].as_u64().unwrap_or(0);
-                    println!("  -> {}  (~{ms} ms behind)", t["name"].as_str().unwrap_or(""));
+                    println!(
+                        "  -> {}  (~{ms} ms behind)",
+                        t["name"].as_str().unwrap_or("")
+                    );
                     if t["transport"].as_str() == Some(Transport::Bluetooth.label()) {
-                        println!(
-                            "     note: Bluetooth adds buffering; the offset is an estimate"
-                        );
+                        println!("     note: Bluetooth adds buffering; the offset is an estimate");
                     }
                 }
             }

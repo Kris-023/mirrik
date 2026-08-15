@@ -176,9 +176,7 @@ pub trait MirrorBackend {
         match (device.volume_scope, mirroring) {
             (_, false) => "current output device".to_string(),
             (VolumeScope::DeviceOnly, true) => "this device only".to_string(),
-            (VolumeScope::AffectsMirror, true) => {
-                "this device and every mirrored copy".to_string()
-            }
+            (VolumeScope::AffectsMirror, true) => "this device and every mirrored copy".to_string(),
             (VolumeScope::Unknown, true) => "effect on mirrored copies unknown".to_string(),
         }
     }

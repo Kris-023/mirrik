@@ -15,3 +15,6 @@ mirrik-core.workspace = true
 
 [target.'cfg(target_os = "linux")'.dependencies]
 mirrik-backend-linux.workspace = true
+
+[target.'cfg(target_os = "windows")'.dependencies]
+mirrik-backend-windows.workspace = true

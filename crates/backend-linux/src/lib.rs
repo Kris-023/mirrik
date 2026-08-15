@@ -79,12 +79,17 @@ impl PipeWireBackend {
             .or_else(|| get("clock.rate"))
             .unwrap_or(48000);
 
-        Ok(Self { quantum, rate, children: Vec::new() })
+        Ok(Self {
+            quantum,
+            rate,
+            children: Vec::new(),
+        })
     }
 
     /// Collects finished holder processes so they do not linger as zombies.
     fn reap(&mut self) {
-        self.children.retain_mut(|c| !matches!(c.try_wait(), Ok(Some(_))));
+        self.children
+            .retain_mut(|c| !matches!(c.try_wait(), Ok(Some(_))));
     }
 
     fn holder_name(&self, target: &DeviceId) -> String {
@@ -195,7 +200,10 @@ fn all_holders() -> Vec<u32> {
 }
 
 fn transport_of(node_name: &str, props: &serde_json::Value) -> Transport {
-    let api = props.get("device.api").and_then(|v| v.as_str()).unwrap_or("");
+    let api = props
+        .get("device.api")
+        .and_then(|v| v.as_str())
+        .unwrap_or("");
     if api == "bluez5" || node_name.starts_with("bluez_output") {
         return Transport::Bluetooth;
     }
@@ -373,7 +381,6 @@ impl MirrorBackend for PipeWireBackend {
 
         let pid = child.id();
 
-
         // pw-cli connects asynchronously. Only surviving that means the target is really
         // there; dying immediately means the arguments were wrong.
         std::thread::sleep(std::time::Duration::from_millis(600));
@@ -429,7 +436,10 @@ impl MirrorBackend for PipeWireBackend {
 
     fn set_volume(&mut self, device: &DeviceId, value: f32) -> Result<()> {
         let percent = (value.clamp(0.0, VOLUME_MAX) * 100.0).round() as u32;
-        run("pactl", &["set-sink-volume", &device.0, &format!("{percent}%")])?;
+        run(
+            "pactl",
+            &["set-sink-volume", &device.0, &format!("{percent}%")],
+        )?;
         Ok(())
     }
 

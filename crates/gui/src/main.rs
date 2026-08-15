@@ -85,7 +85,12 @@ fn backend() -> anyhow::Result<impl MirrorBackend> {
     mirrik_backend_linux::PipeWireBackend::new()
 }
 
-#[cfg(not(target_os = "linux"))]
+#[cfg(target_os = "windows")]
+fn backend() -> anyhow::Result<impl MirrorBackend> {
+    mirrik_backend_windows::WasapiBackend::new()
+}
+
+#[cfg(not(any(target_os = "linux", target_os = "windows")))]
 compile_error!("no backend for this operating system yet (see windows-portierung.md)");
 
 fn main() -> eframe::Result<()> {
@@ -193,7 +198,10 @@ impl<B: MirrorBackend> Window<B> {
 
     /// The source never appears as a destination — mirroring onto itself is a loop.
     fn selectable(&self) -> Vec<&Device> {
-        self.devices.iter().filter(|d| d.id != self.source).collect()
+        self.devices
+            .iter()
+            .filter(|d| d.id != self.source)
+            .collect()
     }
 
     fn device(&self, id: &DeviceId) -> Option<&Device> {
@@ -311,18 +319,25 @@ impl<B: MirrorBackend> Window<B> {
         let hint = self.backend.volume_hint(&d, self.mirroring());
         // Three words: two truncate "AD103 High Definition" to "AD103 High", which reads
         // like a typo. The full name would not fit next to the hint.
-        let title = d.name.split_whitespace().take(3).collect::<Vec<_>>().join(" ");
+        let title = d
+            .name
+            .split_whitespace()
+            .take(3)
+            .collect::<Vec<_>>()
+            .join(" ");
 
         ui.horizontal(|ui| {
             let t = egui::RichText::new(title).strong();
             // Focus is shown through colour, not a marker character.
             ui.label(if focused { t.color(FOCUS) } else { t });
             let h = egui::RichText::new(format!("— {hint}")).weak().small();
-            ui.label(if d.volume_scope == VolumeScope::AffectsMirror && self.mirroring() {
-                h.color(AMBER)
-            } else {
-                h
-            });
+            ui.label(
+                if d.volume_scope == VolumeScope::AffectsMirror && self.mirroring() {
+                    h.color(AMBER)
+                } else {
+                    h
+                },
+            );
         });
 
         let response = ui.add(
@@ -419,10 +434,7 @@ impl<B: MirrorBackend> eframe::App for Window<B> {
             let (monitor, outer) =
                 ctx.input(|i| (i.viewport().monitor_size, i.viewport().outer_rect));
             if let (Some(m), Some(o)) = (monitor, outer) {
-                let pos = egui::pos2(
-                    (m.x - o.width()) * 0.5,
-                    (m.y - o.height()) * 0.5,
-                );
+                let pos = egui::pos2((m.x - o.width()) * 0.5, (m.y - o.height()) * 0.5);
                 ctx.send_viewport_cmd(egui::ViewportCommand::OuterPosition(pos));
                 self.centred = true;
             }
@@ -519,7 +531,9 @@ impl<B: MirrorBackend> Window<B> {
                     .as_ref()
                     .and_then(|d| self.backend.target_latency_ms(d).ok())
                     .unwrap_or(self.caps.base_latency_ms);
-                let bluetooth = d.map(|d| d.transport == Transport::Bluetooth).unwrap_or(false);
+                let bluetooth = d
+                    .map(|d| d.transport == Transport::Bluetooth)
+                    .unwrap_or(false);
                 ui.horizontal(|ui| {
                     ui.label(egui::RichText::new(format!("to     {name}")).small());
                     let note = if bluetooth {
