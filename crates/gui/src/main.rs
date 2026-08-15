@@ -28,14 +28,24 @@
 //!     the rule centres on the *focused* monitor, which is the better behaviour on a
 //!     multi-head setup anyway.
 //!
-//! No text in this file may rely on glyphs beyond ASCII plus what the bundled font
-//! actually has: arrows and filled circles render as empty boxes. Status dots are painted.
+//! # Look
+//!
+//! The skin lives in [`theme`] and comes in two grounds — a light panel and an OLED
+//! black — chosen from the operating system's own light/dark setting. This file decides
+//! *what* is on screen; `theme.rs` decides what it looks like.
+//!
+//! Fonts are embedded, so any glyph either typeface has is safe here. Arrows and filled
+//! circles are still avoided: the design asks for none, and painted shapes beat glyphs
+//! for anything that has to be a specific size.
 
+mod theme;
+
+use eframe::egui;
 use mirrik_core::{
     Capabilities, Device, DeviceId, MirrorBackend, Transport, VolumeScope, VOLUME_MAX,
 };
-use eframe::egui;
 use std::time::{Duration, Instant};
+use theme::Palette;
 
 /// How often state is re-read from the system while the window is open.
 ///
@@ -47,27 +57,9 @@ const TICK: Duration = Duration::from_millis(600);
 /// Step size when adjusting a slider from the keyboard.
 const STEP: f32 = 0.05;
 
-/// Fixed window width. The height follows the content, see the resize block in `ui()`.
-const WIDTH: f32 = 500.0;
-
-const GREEN: egui::Color32 = egui::Color32::from_rgb(80, 190, 120);
-const FOCUS: egui::Color32 = egui::Color32::from_rgb(120, 170, 255);
-const AMBER: egui::Color32 = egui::Color32::from_rgb(230, 170, 70);
-const RED: egui::Color32 = egui::Color32::from_rgb(220, 80, 80);
-
-/// Paints a status dot instead of setting one as text.
-///
-/// The bundled egui font has neither a filled circle nor arrows; they show up as empty
-/// boxes. Anything painted is independent of the font.
-fn dot(ui: &mut egui::Ui, colour: egui::Color32, filled: bool) {
-    let (rect, _) = ui.allocate_exact_size(egui::vec2(14.0, 14.0), egui::Sense::hover());
-    if filled {
-        ui.painter().circle_filled(rect.center(), 5.0, colour);
-    } else {
-        ui.painter()
-            .circle_stroke(rect.center(), 5.0, egui::Stroke::new(1.5, colour));
-    }
-}
+/// Fixed window width, straight from the design's 430px card. The height follows the
+/// content, see the resize block in `ui()`.
+const WIDTH: f32 = 430.0;
 
 /// What the keyboard currently points at.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -138,7 +130,10 @@ fn main() -> eframe::Result<()> {
     eframe::run_native(
         "Mirrik",
         options,
-        Box::new(move |_cc| Ok(Box::new(app))),
+        Box::new(move |cc| {
+            theme::install_fonts(&cc.egui_ctx);
+            Ok(Box::new(app))
+        }),
     )
 }
 
@@ -158,6 +153,11 @@ struct Window<B: MirrorBackend> {
     height: f32,
     /// Set whenever the focus moves, so the next frame scrolls it into view.
     reveal_focus: bool,
+    /// The colours in use, and the system setting they were derived from. Kept so a
+    /// user flipping their desktop to dark repaints the window instead of the next
+    /// restart doing it.
+    palette: Palette,
+    theme: Option<egui::Theme>,
 }
 
 impl<B: MirrorBackend> Window<B> {
@@ -177,6 +177,8 @@ impl<B: MirrorBackend> Window<B> {
             centred: false,
             height: 0.0,
             reveal_focus: false,
+            palette: Palette::of(egui::Theme::Light),
+            theme: None,
         };
         w.refresh()?;
         if w.selectable().is_empty() {
@@ -307,18 +309,20 @@ impl<B: MirrorBackend> Window<B> {
         let list = self.selectable().len() as f32;
         let assumed = (self.targets.len() as f32 + 1.0).min(list);
         let sliders = 1.0 + assumed;
-        let head = 64.0 + 18.0 * assumed;
-        head + 56.0 * sliders + 32.0 * list + 80.0
+        // Header, source block, the two headings, footer and the four rules between them
+        // add up to a constant; each fader and each device row is a fixed block on top.
+        // Measured against the real window at both extremes, not derived.
+        280.0 + 62.0 * sliders + 47.0 * list
     }
 
-    /// One slider with its label. Returns true when the user let go of it.
-    fn slider(&mut self, ui: &mut egui::Ui, id: &DeviceId, focused: bool) -> bool {
+    /// One fader with its label and boxed readout. Returns true when the user let go.
+    fn fader(&mut self, ui: &mut egui::Ui, id: &DeviceId, focused: bool, master: bool) -> bool {
+        let p = self.palette;
         let Some(d) = self.device(id).cloned() else {
             return false;
         };
-        let mut value = d.volume;
 
-        // The explanation comes from the backend, never from this file: whether a slider
+        // The explanation comes from the backend, never from this file: whether a fader
         // also changes mirrored copies depends on where the driver applies gain, and that
         // differs per device and per platform.
         let hint = self.backend.volume_hint(&d, self.mirroring());
@@ -331,40 +335,82 @@ impl<B: MirrorBackend> Window<B> {
             .collect::<Vec<_>>()
             .join(" ");
 
-        ui.horizontal(|ui| {
-            let t = egui::RichText::new(title).strong();
-            // Focus is shown through colour, not a marker character.
-            ui.label(if focused { t.color(FOCUS) } else { t });
-            let h = egui::RichText::new(format!("— {hint}")).weak().small();
-            ui.label(
-                if d.volume_scope == VolumeScope::AffectsMirror && self.mirroring() {
-                    h.color(AMBER)
-                } else {
-                    h
+        // The source fader is the one that can move every mirrored copy at once, so while
+        // mirroring it is the one thing on screen the design lets wear the accent.
+        let live_master = master && self.mirroring();
+        let name_colour = if live_master { p.accent } else { p.text };
+        // Same treatment for a destination whose gain sits in front of the tap — that is
+        // a surprise worth one use of the accent.
+        let hint_colour = if live_master || (d.volume_scope == VolumeScope::AffectsMirror
+            && self.mirroring())
+        {
+            p.accent
+        } else {
+            p.faint
+        };
+        let bar = if live_master {
+            p.accent
+        } else if p.mono_ui {
+            p.dim
+        } else {
+            p.text
+        };
+
+        let block = ui.scope(|ui| {
+            let (value, response) = theme::fader(
+                ui,
+                &p,
+                &theme::FaderRow {
+                    name: &title,
+                    hint: &format!("— {hint}"),
+                    name_colour,
+                    hint_colour,
+                    bar,
+                    value: d.volume,
                 },
             );
+            if response.changed() {
+                self.set_volume(id, value);
+            }
+            response.drag_stopped()
         });
 
-        let response = ui.add(
-            egui::Slider::new(&mut value, 0.0..=VOLUME_MAX)
-                .custom_formatter(|v, _| format!("{:.0} %", v * 100.0))
-                .show_value(true),
-        );
-        if response.changed() {
-            self.set_volume(id, value);
+        if focused {
+            theme::focus_ring(ui, &p, block.response.rect.expand(3.0));
+            if self.reveal_focus {
+                block.response.scroll_to_me(None);
+                self.reveal_focus = false;
+            }
         }
-        if focused && self.reveal_focus {
-            response.scroll_to_me(None);
-            self.reveal_focus = false;
-        }
-        response.drag_stopped()
+        block.inner
     }
 }
 
 impl<B: MirrorBackend> eframe::App for Window<B> {
+    // The clear colour is what eframe paints before egui draws anything, and the default
+    // is a dark grey that flashes for one frame on the light ground.
+    fn clear_color(&self, visuals: &egui::Visuals) -> [f32; 4] {
+        visuals.panel_fill.to_normalized_gamma_f32()
+    }
+
     // eframe 0.36 hands the app a ready-made `Ui` instead of a `Context`.
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
         let ctx = ui.ctx().clone();
+
+        // Follow the desktop's own light/dark setting. eframe leaves the preference on
+        // `System`, so this is whatever the platform reports.
+        //
+        // Checked every frame rather than once, because it costs nothing and the answer
+        // can change. On Windows 11 it does not: winit asks `uxtheme` ordinal 132, which
+        // hands a process the same answer for its whole life, so a desktop flipped to
+        // dark shows up the next time the window opens. For a window that opens on a
+        // keystroke and closes on Esc that is the same thing in practice.
+        let theme = ctx.theme();
+        if self.theme != Some(theme) {
+            self.theme = Some(theme);
+            self.palette = Palette::of(theme);
+            ctx.set_visuals(theme::visuals(&self.palette));
+        }
 
         let mut toggle: Option<usize> = None;
         let mut stop = false;
@@ -471,22 +517,35 @@ impl<B: MirrorBackend> eframe::App for Window<B> {
         // (the window stayed at its initial 278). The request below is still sent because
         // X11 and Windows do honour it and then no scrollbar ever appears; but nothing
         // depends on it succeeding.
-        let width = ui.available_width() - 28.0;
         let mut content = 0.0;
+        let width = ui.available_width();
         egui::ScrollArea::vertical()
             .auto_shrink([false; 2])
             .show(ui, |ui| {
-                ui.horizontal(|ui| {
-                    ui.add_space(14.0);
-                    ui.vertical(|ui| {
-                        ui.set_max_width(width);
-                        self.body(ui);
-                        content = ui.min_rect().height();
-                    });
-                });
+                // Pin the width to the card. Without this a single label that does not
+                // fit widens the scroll area, and every section below it reads that wider
+                // number as "available" — one long device name in the mixer used to push
+                // the whole destination list off the right edge.
+                ui.set_max_width(width);
+                self.body(ui);
+                content = ui.min_rect().height();
             });
 
-        let wanted = content + 24.0;
+        // The 2px edge of the card. The window is undecorated, so this frame is the only
+        // thing separating it from whatever it floats over — drawn on the foreground
+        // layer so the scroll area cannot paint across it.
+        ctx.layer_painter(egui::LayerId::new(
+            egui::Order::Foreground,
+            egui::Id::new("card-edge"),
+        ))
+        .rect_stroke(
+            ctx.viewport_rect(),
+            0,
+            egui::Stroke::new(2.0, self.palette.rule),
+            egui::StrokeKind::Inside,
+        );
+
+        let wanted = content;
         if (wanted - self.height).abs() > 1.0 {
             self.height = wanted;
             ctx.send_viewport_cmd(egui::ViewportCommand::InnerSize(egui::vec2(WIDTH, wanted)));
@@ -512,152 +571,72 @@ impl<B: MirrorBackend> eframe::App for Window<B> {
     }
 }
 
+/// Padding of one block, in the design's own numbers. Rules are drawn between blocks and
+/// run the full width of the card, so they must never be inside one of these.
+fn block(top: i8, bottom: i8) -> egui::Frame {
+    egui::Frame::NONE.inner_margin(egui::Margin {
+        left: 20,
+        right: 20,
+        top,
+        bottom,
+    })
+}
+
 impl<B: MirrorBackend> Window<B> {
     fn body(&mut self, ui: &mut egui::Ui) {
-        ui.add_space(10.0);
+        let p = self.palette;
         let source_name = self
             .device(&self.source)
             .map(|d| d.name.clone())
             .unwrap_or_else(|| self.source.0.clone());
 
-        // ---- header: the state, always first ----
-        if self.mirroring() {
-            ui.horizontal(|ui| {
-                dot(ui, GREEN, true);
-                let n = self.targets.len();
-                let text = if n == 1 {
-                    "Mirroring".to_string()
-                } else {
-                    format!("Mirroring to {n} devices")
-                };
-                ui.label(egui::RichText::new(text).strong().size(16.0).color(GREEN));
+        self.header(ui, &source_name);
+        theme::rule(ui, &p);
+        self.source_block(ui, &source_name);
+        theme::rule(ui, &p);
+
+        // ---- mixer ----
+        let mut reread = false;
+        block(14, 6).show(ui, |ui| {
+            theme::kicker(ui, &p, "Mixer");
+            ui.add_space(12.0);
+            let source = self.source.clone();
+            reread = self.fader(ui, &source, self.focus == Focus::Source, true);
+            for (i, id) in self.targets.clone().iter().enumerate() {
+                ui.add_space(14.0);
+                reread |= self.fader(ui, id, self.focus == Focus::Target(i), false);
+            }
+        });
+        theme::rule(ui, &p);
+
+        let clicked = self.destinations(ui);
+
+        if let Some(e) = self.error.clone() {
+            block(10, 0).show(ui, |ui| {
+                let mut job = theme::text(format!("! {e}"), p.body(11.0), p.accent, 0.0);
+                theme::clip_to(&mut job, ui.available_width());
+                ui.label(job);
             });
-            ui.add_space(4.0);
-            ui.label(egui::RichText::new(format!("from   {source_name}")).small());
-            for id in self.targets.clone() {
-                let d = self.device(&id).cloned();
-                let name = d
-                    .as_ref()
-                    .map(|d| d.name.clone())
-                    .unwrap_or_else(|| id.0.clone());
-                let latency = d
-                    .as_ref()
-                    .and_then(|d| self.backend.target_latency_ms(d).ok())
-                    .unwrap_or(self.caps.base_latency_ms);
-                let bluetooth = d
-                    .map(|d| d.transport == Transport::Bluetooth)
-                    .unwrap_or(false);
-                ui.horizontal(|ui| {
-                    ui.label(egui::RichText::new(format!("to     {name}")).small());
-                    let note = if bluetooth {
-                        egui::RichText::new(format!("~{latency} ms, Bluetooth buffering"))
-                            .small()
-                            .color(AMBER)
-                    } else {
-                        egui::RichText::new(format!("~{latency} ms")).small().weak()
-                    };
-                    ui.label(note);
-                });
-            }
-        } else {
-            ui.horizontal(|ui| {
-                dot(ui, ui.visuals().weak_text_color(), false);
-                ui.label(
-                    egui::RichText::new("Not mirroring")
-                        .strong()
-                        .size(16.0)
-                        .weak(),
-                );
-            });
-            ui.add_space(4.0);
-            ui.label(
-                egui::RichText::new(format!("Audio plays only on: {source_name}"))
-                    .weak()
-                    .small(),
-            );
         }
 
-        ui.add_space(10.0);
-        ui.separator();
-        ui.add_space(6.0);
-
-        // ---- volume ----
-        let source = self.source.clone();
-        let mut reread = self.slider(ui, &source, self.focus == Focus::Source);
-        for (i, id) in self.targets.clone().iter().enumerate() {
-            ui.add_space(4.0);
-            reread |= self.slider(ui, id, self.focus == Focus::Target(i));
-        }
-
-        ui.add_space(8.0);
-        ui.separator();
-        ui.add_space(6.0);
-
-        // ---- device list ----
-        ui.label(
-            egui::RichText::new(if self.mirroring() {
-                "Add or remove destinations"
-            } else {
-                "Mirror to"
-            })
-            .weak()
-            .small(),
-        );
-        ui.add_space(4.0);
-
-        let targets = self.targets.clone();
-        let focus = self.focus;
-        let reveal = self.reveal_focus;
-        let mut clicked: Option<usize> = None;
-
-        for (n, d) in self.selectable().iter().enumerate() {
-            let active = targets.contains(&d.id);
-            let suffix = match (active, d.transport) {
-                (true, Transport::Bluetooth) => "   - on, Bluetooth",
-                (true, _) => "   - on",
-                (false, Transport::Bluetooth) => "   (Bluetooth)",
-                (false, _) => "",
-            };
-            let label = format!("{}   {}{}", n + 1, d.name, suffix);
-            let text = if active {
-                egui::RichText::new(label).color(GREEN)
-            } else {
-                egui::RichText::new(label)
-            };
-            // Atom::grow() after the text pushes it left; without it egui centres the
-            // caption inside the button and the list looks ragged.
-            let response = ui.add_sized(
-                [ui.available_width(), 26.0],
-                egui::Button::selectable(focus == Focus::Device(n), (text, egui::Atom::grow())),
-            );
-            // Keyboard navigation must never move the focus somewhere invisible.
-            if focus == Focus::Device(n) && reveal {
-                response.scroll_to_me(None);
-            }
-            if response.clicked() {
-                clicked = Some(n);
-            }
-        }
-
-        if let Some(e) = &self.error {
-            ui.add_space(6.0);
-            ui.colored_label(RED, e);
-        }
-
-        ui.add_space(8.0);
-        ui.label(
-            egui::RichText::new(match self.focus {
-                Focus::Source | Focus::Target(_) => {
-                    "up/down focus · left/right volume · 1-9 toggle device · Esc close"
-                }
-                Focus::Device(_) if self.mirroring() => {
-                    "up/down focus · Enter add or remove · x stop all · Esc close"
-                }
-                Focus::Device(_) => "up/down focus · Enter mirror here · 1-9 direct · Esc close",
-            })
-            .weak()
-            .small(),
-        );
+        block(14, 0).show(ui, |ui| ui.add_space(0.0));
+        theme::rule(ui, &p);
+        block(11, 12).show(ui, |ui| {
+            ui.label(theme::text(
+                match self.focus {
+                    Focus::Source | Focus::Target(_) => {
+                        "up/down focus · left/right volume · 1-9 toggle · Esc close"
+                    }
+                    Focus::Device(_) if self.mirroring() => {
+                        "up/down focus · Enter add or remove · x stop all · Esc close"
+                    }
+                    Focus::Device(_) => "up/down focus · Enter mirror here · 1-9 direct · Esc close",
+                },
+                p.mono(10.0),
+                p.ghost,
+                0.0,
+            ));
+        });
 
         self.reveal_focus = false;
 
@@ -665,11 +644,166 @@ impl<B: MirrorBackend> Window<B> {
             self.focus = Focus::Device(n);
             self.toggle(n);
         } else if reread {
-            // After releasing a slider read once more: that shows what the system really
+            // After releasing a fader read once more: that shows what the system really
             // set, not what we asked for.
             if let Err(e) = self.refresh() {
                 self.error = Some(format!("{e:#}"));
             }
         }
+    }
+
+    /// The state, always first and always in the same place: a square, a headline, and
+    /// one line naming what is involved.
+    fn header(&mut self, ui: &mut egui::Ui, source_name: &str) {
+        let p = self.palette;
+        let mirroring = self.mirroring();
+        let title = match self.targets.len() {
+            0 => "Not mirroring".to_string(),
+            1 => "Mirroring".to_string(),
+            n => format!("Mirroring to {n} devices"),
+        };
+        // While mirroring the subline names the destinations, because that is the thing
+        // the user cannot see anywhere else at a glance; idle it names the one device
+        // still making sound.
+        let sub = if mirroring {
+            self.targets
+                .iter()
+                .map(|id| {
+                    self.device(id)
+                        .map(|d| d.name.clone())
+                        .unwrap_or_else(|| id.0.clone())
+                })
+                .collect::<Vec<_>>()
+                .join("  ·  ")
+        } else {
+            source_name.to_string()
+        };
+
+        block(18, 14).show(ui, |ui| {
+            // The wordmark sits on the right; everything else has to fit beside it, with
+            // room for the square, the gaps egui puts between them, and the mark itself.
+            let text_width = (ui.available_width() - 44.0 - 80.0).max(60.0);
+            ui.horizontal_top(|ui| {
+                ui.vertical(|ui| {
+                    ui.add_space(7.0);
+                    theme::status_square(ui, &p, mirroring);
+                });
+                ui.add_space(12.0);
+                ui.vertical(|ui| {
+                    let mut head =
+                        theme::text(title, p.strong(p.head_size()), p.text, p.head_size() * -0.02);
+                    theme::clip_to(&mut head, text_width);
+                    ui.label(head);
+                    ui.add_space(5.0);
+                    let mut job = theme::text(sub.to_uppercase(), p.body(10.0), p.faint, 1.4);
+                    theme::clip_to(&mut job, text_width);
+                    ui.label(job);
+                });
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::TOP), |ui| {
+                    ui.add_space(0.0);
+                    ui.label(theme::text(
+                        "MIRRIK",
+                        p.strong(11.0),
+                        if p.mono_ui { p.accent } else { p.text },
+                        11.0 * 0.22,
+                    ));
+                });
+            });
+        });
+    }
+
+    /// Where the sound comes from. Never a choice — it is whatever the system calls its
+    /// default output — so it is stated, not offered.
+    fn source_block(&mut self, ui: &mut egui::Ui, source_name: &str) {
+        let p = self.palette;
+        let transport = self
+            .device(&self.source)
+            .map(|d| d.transport.label())
+            .unwrap_or("");
+        block(14, 16).show(ui, |ui| {
+            theme::kicker(ui, &p, "Source");
+            ui.add_space(7.0);
+            let mut name = theme::text(
+                source_name,
+                p.strong(if p.mono_ui { 14.0 } else { 15.0 }),
+                p.text,
+                0.0,
+            );
+            theme::clip_to(&mut name, ui.available_width());
+            ui.label(name);
+            ui.label(theme::text(transport, p.body(12.0), p.dim, 0.0));
+        });
+    }
+
+    /// The device list. Returns the entry that was clicked, if any.
+    fn destinations(&mut self, ui: &mut egui::Ui) -> Option<usize> {
+        let p = self.palette;
+        let counter = format!(
+            "{} / {} active",
+            self.targets.len(),
+            self.selectable().len()
+        );
+        block(14, 0).show(ui, |ui| {
+            ui.horizontal(|ui| {
+                theme::kicker(ui, &p, "Destinations");
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    ui.label(theme::text(counter, p.mono(10.5), p.ghost, 0.0));
+                });
+            });
+        });
+
+        let targets = self.targets.clone();
+        let focus = self.focus;
+        let reveal = self.reveal_focus;
+        let base_latency = self.caps.base_latency_ms;
+        let mut clicked = None;
+
+        // Rows sit closer to the card edge than the rest, so their rail reads as part of
+        // the frame rather than as a stray line in the middle of the panel.
+        egui::Frame::NONE
+            .inner_margin(egui::Margin {
+                left: 10,
+                right: 10,
+                top: 10,
+                bottom: 4,
+            })
+            .show(ui, |ui| {
+                for (n, d) in self.selectable().iter().enumerate() {
+                    let on = targets.contains(&d.id);
+                    let latency = self
+                        .backend
+                        .target_latency_ms(d)
+                        .unwrap_or(base_latency);
+                    let mut meta = if on {
+                        format!("~{latency} ms · {:.0} %", d.volume * 100.0)
+                    } else {
+                        "idle".to_string()
+                    };
+                    // Bluetooth is the one transport that adds delay worth warning about,
+                    // and it is invisible in the device name.
+                    if d.transport == Transport::Bluetooth {
+                        meta.push_str(" · Bluetooth");
+                    }
+                    let response = theme::device_row(
+                        ui,
+                        &p,
+                        &theme::Row {
+                            num: n + 1,
+                            name: &d.name,
+                            meta: &meta,
+                            on,
+                            focused: focus == Focus::Device(n),
+                        },
+                    );
+                    // Keyboard navigation must never move the focus somewhere invisible.
+                    if focus == Focus::Device(n) && reveal {
+                        response.scroll_to_me(None);
+                    }
+                    if response.clicked() {
+                        clicked = Some(n);
+                    }
+                }
+            });
+        clicked
     }
 }
