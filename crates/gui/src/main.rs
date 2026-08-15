@@ -124,6 +124,11 @@ fn main() -> eframe::Result<()> {
             .with_resizable(true)
             .with_decorations(false)
             .with_always_on_top()
+            // Nothing is ever dropped onto this window, and asking for it is not free on
+            // Windows: winit initialises COM as single-threaded to support it, while the
+            // audio backend has already claimed this thread as multi-threaded — which is
+            // what WASAPI wants. The two are incompatible and winit panics on the clash.
+            .with_drag_and_drop(false)
             // Read by window rules as `class` (Wayland/X11) and used as the window class
             // on Windows.
             .with_app_id("mirrik"),
@@ -485,6 +490,10 @@ impl<B: MirrorBackend> eframe::App for Window<B> {
         if (wanted - self.height).abs() > 1.0 {
             self.height = wanted;
             ctx.send_viewport_cmd(egui::ViewportCommand::InnerSize(egui::vec2(WIDTH, wanted)));
+            // The resize lands on the following frame, and with no input arriving egui
+            // would not draw one for another TICK. Without this the window visibly
+            // limps after the content it is supposed to fit.
+            ctx.request_repaint();
         }
 
         // Actions last: they change the state the frame was drawn from.
@@ -493,8 +502,12 @@ impl<B: MirrorBackend> eframe::App for Window<B> {
                 self.focus = Focus::Device(n);
                 self.toggle(n);
             }
+            // The state this frame was drawn from is now stale — redraw at once instead
+            // of leaving the old picture up until the next poll.
+            ctx.request_repaint();
         } else if stop {
             self.stop();
+            ctx.request_repaint();
         }
     }
 }

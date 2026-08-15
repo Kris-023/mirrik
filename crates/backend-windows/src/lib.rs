@@ -191,6 +191,34 @@ unsafe fn endpoint_volume(d: &IMMDevice) -> Result<IAudioEndpointVolume> {
 /// Start the holder without a console window of its own.
 const CREATE_NO_WINDOW: u32 = 0x0800_0000;
 
+/// The executable that holds a mirror open — always the command line tool.
+///
+/// Not `current_exe()`: started from the graphical front-end that would be the window
+/// binary, which has no `hold` command. It would open a second window, sit there looking
+/// alive, and the mirror would report success while playing nothing at all.
+pub fn holder_exe() -> Result<std::path::PathBuf> {
+    const CLI: &str = "mirrik.exe";
+
+    let me = std::env::current_exe().context("cannot locate own executable")?;
+    if me
+        .file_name()
+        .and_then(|n| n.to_str())
+        .is_some_and(|n| n.eq_ignore_ascii_case(CLI))
+    {
+        return Ok(me);
+    }
+
+    let cli = me.with_file_name(CLI);
+    if cli.is_file() {
+        Ok(cli)
+    } else {
+        bail!(
+            "{CLI} is missing next to {} - it is what keeps a mirror alive",
+            me.display()
+        )
+    }
+}
+
 /// Full path of the executable behind a pid, if it can still be read.
 ///
 /// This is what makes [`MirrorTarget::holder_pattern`] worth storing: Windows recycles
@@ -300,7 +328,7 @@ impl MirrorBackend for WasapiBackend {
             return Ok(());
         }
 
-        let exe = std::env::current_exe().context("cannot locate own executable")?;
+        let exe = holder_exe()?;
         let image = exe.to_string_lossy().to_string();
         let mut child = Command::new(&exe)
             .arg("hold")

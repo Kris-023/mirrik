@@ -6,7 +6,7 @@
 //! terminate a stranger. Storing the holder's executable path is what prevents that, and
 //! this is the test that keeps it honest.
 
-use mirrik_backend_windows::holder_alive;
+use mirrik_backend_windows::{holder_alive, holder_exe};
 use mirrik_core::{DeviceId, MirrorTarget};
 
 fn target(pid: u32, image: &str) -> MirrorTarget {
@@ -42,4 +42,28 @@ fn liveness_needs_both_the_pid_and_the_executable() {
         !holder_alive(&target(u32::MAX, &my_image)),
         "a pid that cannot be opened is not alive"
     );
+}
+
+/// Whoever asks for a mirror, the process that holds it open is the command line tool.
+///
+/// This caught a real bug: started from the graphical front-end, `current_exe()` is the
+/// window binary. It has no `hold` command, so it opened a second window, looked alive to
+/// the liveness check, and the mirror reported success while playing nothing.
+#[test]
+fn the_holder_is_never_just_whatever_is_running() {
+    let me = std::env::current_exe().expect("a test binary knows its own path");
+
+    match holder_exe() {
+        // Never the caller — a test runner is not a mirror holder.
+        Ok(p) => assert_ne!(
+            p, me,
+            "holder_exe picked the calling binary instead of the CLI"
+        ),
+        // No CLI next to the test binary is the normal case here, and saying so out loud
+        // is exactly the behaviour that was missing before.
+        Err(e) => assert!(
+            e.to_string().contains("mirrik.exe"),
+            "the error should name what is missing, got: {e}"
+        ),
+    }
 }
