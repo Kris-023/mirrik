@@ -340,7 +340,7 @@ dim '  works out the right line for your setup and you decide what happens to it
 say ''
 
 # A guess, so the menu opens on the likely answer instead of always on 1.
-guess=11
+guess=12
 for probe in "${XDG_CURRENT_DESKTOP:-}" "${DESKTOP_SESSION:-}"; do
     case "${probe,,}" in
         *hyprland*) guess=1 ;;
@@ -350,23 +350,26 @@ for probe in "${XDG_CURRENT_DESKTOP:-}" "${DESKTOP_SESSION:-}"; do
         *river*)    guess=5 ;;
         *awesome*)  guess=6 ;;
         *bspwm*)    guess=7 ;;
+        # Before *gnome*: Mint reports X-Cinnamon, and Cinnamon is not GNOME here.
+        *cinnamon*) guess=9 ;;
         *gnome*)    guess=8 ;;
-        *kde*|*plasma*) guess=9 ;;
-        *xfce*)     guess=10 ;;
+        *kde*|*plasma*) guess=10 ;;
+        *xfce*)     guess=11 ;;
     esac
-    [ "$guess" != 11 ] && break
+    [ "$guess" != 12 ] && break
 done
 
 say '  Which one are you running?'
-say '     1) Hyprland            7) bspwm / sxhkd'
-say '     2) Sway                8) GNOME'
-say '     3) i3                  9) KDE Plasma'
-say '     4) niri               10) XFCE'
-say '     5) river              11) Something else'
-say '     6) awesome            12) Skip this step'
+say '     1) Hyprland            8) GNOME'
+say '     2) Sway                9) Cinnamon'
+say '     3) i3                 10) KDE Plasma'
+say '     4) niri               11) XFCE'
+say '     5) river              12) Something else'
+say '     6) awesome            13) Skip this step'
+say '     7) bspwm / sxhkd'
 wm="$(ask '  Choice' "$guess")"
 
-if [ "$wm" = 12 ]; then
+if [ "$wm" = 13 ]; then
     dim '  Skipped. The command to bind, whenever you get to it, is:'
     say "    $bindir/mirrik-gui"
 else
@@ -515,6 +518,81 @@ $MARK_CLOSE"
             fi ;;
         9)
             say ''
+            dim '  Cinnamon keeps custom shortcuts in dconf like GNOME does, but under its'
+            dim '  own schema, with the key combination stored as a list rather than a'
+            dim '  string, and with short ids in the list rather than full paths.'
+            say ''
+            # The schema was renamed between Cinnamon generations and the documentation
+            # disagrees with itself about which name is current, so ask the machine
+            # instead of picking one. Guessing wrong here fails silently, which is the
+            # worst way for a setup step to fail.
+            cin=''
+            if have gsettings; then
+                for candidate in org.cinnamon.desktop.keybindings org.cinnamon.keybindings; do
+                    if gsettings list-schemas 2>/dev/null | grep -qx "$candidate"; then
+                        cin="$candidate"
+                        break
+                    fi
+                done
+            fi
+
+            if [ -z "$cin" ]; then
+                dim '  No Cinnamon keybinding schema on this machine, so this one is by hand:'
+                say ''
+                say '    Menu > Preferences > Keyboard > Shortcuts > Custom Shortcuts > Add'
+                say "    Command:   $gui"
+                say "    Shortcut:  $human+$upper"
+            else
+                dim "  Found: $cin"
+                base="/$(printf '%s' "$cin" | tr . /)/custom-keybindings"
+                list="$(gsettings get "$cin" custom-list 2>/dev/null || true)"
+                [ -z "$list" ] && list='@as []'
+
+                # Reuse our own slot if a previous run left one, so re-running does not
+                # pile up a second, third and fourth Mirrik shortcut.
+                slot=''
+                for entry in $(printf '%s' "$list" | grep -oE "'[^']+'" | tr -d "'"); do
+                    if [ "$(gsettings get "$cin.custom-keybinding:$base/$entry/" name 2>/dev/null)" = "'Mirrik'" ]; then
+                        slot="$entry"
+                        break
+                    fi
+                done
+                if [ -z "$slot" ]; then
+                    # Cinnamon's own settings page numbers these, so take the next free
+                    # number rather than inventing a name it might choke on.
+                    i=0
+                    while printf '%s' "$list" | grep -q "'custom$i'"; do i=$((i + 1)); done
+                    slot="custom$i"
+                fi
+
+                target="$cin.custom-keybinding:$base/$slot/"
+                say ''
+                say "    gsettings set $target name 'Mirrik'"
+                say "    gsettings set $target command '$gui'"
+                say "    gsettings set $target binding \"['$gtk$lower']\""
+                say ''
+                if confirm '  Do that now?'; then
+                    gsettings set "$target" name 'Mirrik'
+                    gsettings set "$target" command "$gui"
+                    gsettings set "$target" binding "['$gtk$lower']"
+                    if printf '%s' "$list" | grep -q "'$slot'"; then
+                        ok "  Refreshed the existing Mirrik shortcut ($slot)."
+                    else
+                        case "$list" in
+                            '@as []'|'[]') updated="['$slot']" ;;
+                            *)             updated="${list%]}, '$slot']" ;;
+                        esac
+                        gsettings set "$cin" custom-list "$updated"
+                        ok "  Done. $human+$upper opens the window."
+                    fi
+                    dim '  To undo: Keyboard > Shortcuts > Custom Shortcuts, and remove "Mirrik".'
+                else
+                    dim '  Not run. Menu > Preferences > Keyboard > Shortcuts > Custom'
+                    dim '  Shortcuts > Add does the same thing by hand.'
+                fi
+            fi ;;
+        10)
+            say ''
             dim '  KDE stores shortcuts in a way that is not safe to edit from a script'
             dim '  while Plasma is running - it caches the file and writes it back out.'
             dim '  So this one is by hand, and it is three clicks:'
@@ -526,7 +604,7 @@ $MARK_CLOSE"
             dim '  For the window to float and centre: right-click its title bar > More'
             dim '  Actions > Configure Special Window Settings, match on the window class'
             dim '  "mirrik".' ;;
-        10)
+        11)
             say ''
             dim '  XFCE keeps custom shortcuts in xfconf. One command adds this one:'
             say ''

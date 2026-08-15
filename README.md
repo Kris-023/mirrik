@@ -166,7 +166,7 @@ for your setup:
 | **Hyprland, Sway, i3, river, bspwm/sxhkd** | exact config lines, offered for appending |
 | **awesome** | the same, in Lua, using the modern `append_global_keybindings` API |
 | **niri** | the lines, but never appended — niri keeps all binds in one block |
-| **GNOME, XFCE** | run for you via `gsettings` / `xfconf-query`, if you say yes |
+| **GNOME, Cinnamon, XFCE** | run for you via `gsettings` / `xfconf-query`, if you say yes |
 | **KDE Plasma** | by hand, because Plasma rewrites its own shortcut file underneath you |
 
 It shows every line before writing anything, marks what it added so you can find it again,
