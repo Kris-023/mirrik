@@ -19,22 +19,42 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use windows::core::PCWSTR;
 use windows::Win32::Media::Audio::{
     eConsole, eRender, IAudioCaptureClient, IAudioClient, IAudioRenderClient, IMMDeviceEnumerator,
-    MMDeviceEnumerator, AUDCLNT_SHAREMODE_SHARED, AUDCLNT_STREAMFLAGS_LOOPBACK, WAVEFORMATEX,
+    MMDeviceEnumerator, AUDCLNT_SHAREMODE_SHARED, AUDCLNT_STREAMFLAGS_AUTOCONVERTPCM,
+    AUDCLNT_STREAMFLAGS_LOOPBACK, AUDCLNT_STREAMFLAGS_SRC_DEFAULT_QUALITY, WAVEFORMATEX,
 };
 use windows::Win32::System::Com::{
     CoCreateInstance, CoInitializeEx, CoTaskMemFree, CLSCTX_ALL, COINIT_MULTITHREADED,
 };
 
-/// How much audio the engine is willing to hold before dropping the oldest.
+/// How much audio may sit in the hand-over buffer before the oldest is dropped.
 ///
-/// ponytail: fixed cap instead of drift compensation. Two clocks run here — the source
-/// device and the target device — and nothing keeps them in step, so over a long session
-/// the buffer creeps towards one end and gets trimmed. Audible as a rare tick, not as a
-/// dropout. Proper rate adjustment is stage 4.
-const MAX_BUFFERED_MS: u32 = 200;
+/// Every buffered frame is delay the listener hears, so this is kept tight. Generous
+/// buffering was the first version's mistake: 200 ms here plus a render buffer filled to
+/// the brim came out as a third of a second of lag, clearly audible against the source.
+///
+/// ponytail: a hard cap instead of drift compensation. Two clocks run here — source
+/// device and target device — and nothing keeps them in step, so over a long session the
+/// buffer drifts to one end and gets trimmed. Audible as a rare tick, not as a dropout.
+/// Rate adjustment via `AUDCLNT_STREAMFLAGS_RATEADJUST` is the upgrade path.
+const MAX_BUFFERED_MS: u32 = 20;
 
-/// Engine buffer handed to WASAPI, in 100 ns units (100 ms).
-const CLIENT_BUFFER_HNS: i64 = 1_000_000;
+/// How deep the target's own buffer is kept.
+///
+/// Deep enough to survive a missed poll, shallow enough not to be heard. This is the
+/// dominant term in the delay, which is why it is a named constant and not "whatever
+/// happens to be free".
+pub const TARGET_FILL_MS: u32 = 20;
+
+/// Poll interval. Half the usual engine period, so a poll cannot be skipped entirely.
+const POLL_MS: u64 = 5;
+
+/// Engine buffer for the tap, in 100 ns units (100 ms). Only has to hold what piles up
+/// between polls, so it costs nothing to be roomy here.
+const CAPTURE_BUFFER_HNS: i64 = 1_000_000;
+
+/// Engine buffer for playback (60 ms) — comfortably above [`TARGET_FILL_MS`], because the
+/// fill level is what the loop steers, not the buffer size.
+const RENDER_BUFFER_HNS: i64 = 600_000;
 
 struct Format {
     rate: u32,
@@ -100,41 +120,34 @@ pub fn run(target_id: &str, stop: &AtomicBool) -> Result<()> {
             .context("cannot open the target audio client")?;
 
         let cap_fmt = MixFormat::of(&capture_client)?;
-        let ren_fmt = MixFormat::of(&render_client)?;
         let cap = cap_fmt.describe();
-        let ren = ren_fmt.describe();
-
-        // Shared mode hands both sides float32, so the only thing that can differ is the
-        // rate and the channel count. Refusing loudly beats mirroring at the wrong speed:
-        // a 4:1 rate mismatch does not sound broken, it sounds like a different recording.
-        if cap.rate != ren.rate || cap.channels != ren.channels {
-            bail!(
-                "source runs at {} Hz / {} ch, target at {} Hz / {} ch. \
-                 Set both to the same format in Sound settings (resampling is stage 4).",
-                cap.rate,
-                cap.channels,
-                ren.rate,
-                ren.channels
-            );
-        }
 
         capture_client
             .Initialize(
                 AUDCLNT_SHAREMODE_SHARED,
                 AUDCLNT_STREAMFLAGS_LOOPBACK,
-                CLIENT_BUFFER_HNS,
+                CAPTURE_BUFFER_HNS,
                 0,
                 cap_fmt.0,
                 None,
             )
             .context("cannot start loopback capture on the source device")?;
+
+        // The target is opened in the *source's* format, not its own, and the engine is
+        // told to convert. Devices disagree far more often than the Linux side suggested —
+        // 192 kHz on one output against 48 kHz on the next is an ordinary desktop, not an
+        // exotic one — and a tool that refused those pairs would be useless to most people.
+        //
+        // Letting the audio engine resample is not a shortcut around writing one: shared
+        // mode already runs every stream through that converter, it is anti-aliased, and
+        // it costs no dependency and no drift of its own.
         render_client
             .Initialize(
                 AUDCLNT_SHAREMODE_SHARED,
+                AUDCLNT_STREAMFLAGS_AUTOCONVERTPCM | AUDCLNT_STREAMFLAGS_SRC_DEFAULT_QUALITY,
+                RENDER_BUFFER_HNS,
                 0,
-                CLIENT_BUFFER_HNS,
-                0,
-                ren_fmt.0,
+                cap_fmt.0,
                 None,
             )
             .context("cannot open the target device for playback")?;
@@ -146,11 +159,14 @@ pub fn run(target_id: &str, stop: &AtomicBool) -> Result<()> {
             .GetService()
             .context("cannot get the render service")?;
 
+        // Everything downstream counts in source frames, because that is the format both
+        // clients were opened with — the conversion happens behind the render client.
         let render_frames = render_client
             .GetBufferSize()
             .context("cannot read the target buffer size")?;
-        let channels = ren.channels as usize;
-        let max_samples = (MAX_BUFFERED_MS as usize * ren.rate as usize / 1000) * channels;
+        let channels = cap.channels as usize;
+        let max_samples = (MAX_BUFFERED_MS as usize * cap.rate as usize / 1000) * channels;
+        let target_fill = (TARGET_FILL_MS * cap.rate / 1000).min(render_frames);
 
         capture_client.Start().context("cannot start the capture")?;
         render_client.Start().context("cannot start playback")?;
@@ -198,14 +214,21 @@ pub fn run(target_id: &str, stop: &AtomicBool) -> Result<()> {
             let padding = render_client
                 .GetCurrentPadding()
                 .context("cannot read the target buffer fill level")?;
-            let free_frames = render_frames.saturating_sub(padding);
 
-            if free_frames > 0 {
+            // Top up to a fixed shallow level instead of filling everything that is free.
+            // Writing into all the free space would push a full buffer's worth of audio
+            // ahead of the listener, and that delay never recovers — it is heard for as
+            // long as the mirror runs.
+            let want = target_fill
+                .saturating_sub(padding)
+                .min(render_frames - padding);
+
+            if want > 0 {
                 let slot = render
-                    .GetBuffer(free_frames)
+                    .GetBuffer(want)
                     .context("cannot claim the target buffer")?;
-                let wanted = free_frames as usize * channels;
-                let out = std::slice::from_raw_parts_mut(slot as *mut f32, wanted);
+                let out =
+                    std::slice::from_raw_parts_mut(slot as *mut f32, want as usize * channels);
 
                 // Anything the tap did not deliver becomes silence rather than a gap.
                 // This is the line that keeps the render client from starving while the
@@ -214,13 +237,11 @@ pub fn run(target_id: &str, stop: &AtomicBool) -> Result<()> {
                     *sample = buffer.pop_front().unwrap_or(0.0);
                 }
                 render
-                    .ReleaseBuffer(free_frames, 0)
+                    .ReleaseBuffer(want, 0)
                     .context("cannot hand the target buffer back")?;
             }
 
-            // Half a poll of the engine period: often enough not to run dry, rarely
-            // enough not to spin a core.
-            std::thread::sleep(std::time::Duration::from_millis(5));
+            std::thread::sleep(std::time::Duration::from_millis(POLL_MS));
         }
 
         if let Err(e) = capture_client.Stop() {

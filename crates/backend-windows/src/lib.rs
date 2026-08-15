@@ -109,12 +109,15 @@ impl WasapiBackend {
             id: DeviceId(id),
             name,
             volume,
-            // Deliberately not guessed. Windows applies volume inside the audio engine
-            // and loopback capture taps that same engine, so mirrored copies are
-            // *expected* to follow the slider — the opposite of Linux. Until that is
-            // measured against real hardware, "unknown" is the honest answer and the
-            // interface renders exactly that.
-            volume_scope: VolumeScope::Unknown,
+            // Measured 2026-08-15 with real hardware: a mirrored AirPods Max keeps its
+            // own level, unaffected by the source device's slider — the same answer
+            // Linux gives, and the opposite of what was expected here.
+            //
+            // It also follows from the signal chain rather than from the device: the
+            // endpoint volume is applied *after* the render client that feeds it, so a
+            // slider can only ever move its own device. Where the driver puts the gain
+            // (chip or software) changes nothing about that ordering.
+            volume_scope: VolumeScope::DeviceOnly,
             transport: transport_of(d),
         })
     }
@@ -411,8 +414,6 @@ impl MirrorBackend for WasapiBackend {
                 .GetDevicePeriod(Some(&mut default_period), None)
                 .context("cannot read the device period")?;
 
-            // Two periods: one for the loopback capture, one for the render side — the
-            // same "2 x quantum" shape the PipeWire backend reports.
             let period_ms = (default_period as f64 / 10_000.0).ceil() as u32;
 
             Ok(Capabilities {
@@ -420,7 +421,11 @@ impl MirrorBackend for WasapiBackend {
                 creates_virtual_device: false,
                 changes_default_device: false,
                 moves_streams: false,
-                base_latency_ms: 2 * period_ms,
+                // One period to notice the audio, plus however deep the engine keeps the
+                // target buffer. Reporting two periods was wrong: it described the
+                // hardware and ignored what the mirror loop itself adds, which is the
+                // larger half and the part a listener actually hears.
+                base_latency_ms: period_ms + mirror::TARGET_FILL_MS,
                 max_targets: 0,
             })
         }
