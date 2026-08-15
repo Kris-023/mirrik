@@ -136,7 +136,7 @@ fn main() -> eframe::Result<()> {
     };
 
     eframe::run_native(
-        "mirrik",
+        "Mirrik",
         options,
         Box::new(move |_cc| Ok(Box::new(app))),
     )

@@ -56,7 +56,7 @@ impl PipeWireBackend {
 
         // pw-metadata only exists on PipeWire and is the cheapest positive proof.
         let meta = run("pw-metadata", &["-n", "settings"]).context(
-            "PipeWire not reachable. mirrik requires PipeWire — on plain PulseAudio a \
+            "PipeWire not reachable. Mirrik requires PipeWire — on plain PulseAudio a \
              loopback module belongs to the daemon and would survive a crash of this tool, \
              which breaks its core promise that switching off leaves no trace.",
         )?;
@@ -353,7 +353,7 @@ impl MirrorBackend for PipeWireBackend {
         // No media.class on either side: that keeps both ends streams, so no sink appears.
         let args = format!(
             r#"{{
-    node.description = "mirrik"
+    node.description = "Mirrik"
     capture.props = {{
         stream.capture.sink = true
         target.object = "{source}"
