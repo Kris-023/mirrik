@@ -75,6 +75,13 @@ enum Command {
         #[arg(long)]
         json: bool,
     },
+    /// Internal: keep one destination alive. Started by `on`/`add`, never typed by hand.
+    ///
+    /// This process *is* the mirror — killing it is how a destination goes away, which is
+    /// the same guarantee the PipeWire module gives by dying with its owner.
+    #[cfg(target_os = "windows")]
+    #[command(hide = true)]
+    Hold { target: String },
 }
 
 #[cfg(target_os = "linux")]
@@ -103,6 +110,17 @@ fn json_device(d: &Device) -> serde_json::Value {
 
 fn main() -> Result<()> {
     let cli = Cli::parse();
+
+    // Handled before the backend exists: the holder owns no shared state and must not
+    // run the cleanup below, which would tidy away the very mirror it is about to open.
+    #[cfg(target_os = "windows")]
+    if let Command::Hold { target } = &cli.command {
+        // Never set — the loop ends when the process is terminated, and that is the
+        // point: the mirror lives exactly as long as this process does.
+        let stop = std::sync::atomic::AtomicBool::new(false);
+        return mirrik_backend_windows::mirror::run(target, &stop);
+    }
+
     let mut b = backend()?;
 
     // Safety net before every command: clear leftovers of a crashed run instead of
@@ -209,6 +227,10 @@ fn main() -> Result<()> {
             }
             report(&mut b, json)?;
         }
+
+        // Already handled above, before the backend was built.
+        #[cfg(target_os = "windows")]
+        Command::Hold { .. } => unreachable!(),
     }
 
     Ok(())

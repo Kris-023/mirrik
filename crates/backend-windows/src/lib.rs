@@ -8,10 +8,15 @@
 //! binding. The same reasoning applies here — get the device model right against real
 //! hardware before an audio engine starts pushing samples through it.
 
+pub mod mirror;
+
 use anyhow::{anyhow, bail, Context, Result};
 use mirrik_core::{
-    state, Capabilities, Device, DeviceId, Mirror, MirrorBackend, Transport, VolumeScope,
+    state, Capabilities, Device, DeviceId, Mirror, MirrorBackend, MirrorTarget, Transport,
+    VolumeScope,
 };
+use std::os::windows::process::CommandExt;
+use std::process::{Command, Stdio};
 use windows::core::{GUID, PCWSTR};
 use windows::Win32::Devices::FunctionDiscovery::PKEY_Device_FriendlyName;
 use windows::Win32::Foundation::PROPERTYKEY;
@@ -25,6 +30,10 @@ use windows::Win32::System::Com::StructuredStorage::{
 };
 use windows::Win32::System::Com::{
     CoCreateInstance, CoInitializeEx, CoTaskMemFree, CLSCTX_ALL, COINIT_MULTITHREADED, STGM_READ,
+};
+use windows::Win32::System::Threading::{
+    OpenProcess, QueryFullProcessImageNameW, TerminateProcess, PROCESS_NAME_FORMAT,
+    PROCESS_QUERY_LIMITED_INFORMATION, PROCESS_TERMINATE,
 };
 
 /// Which bus the device hangs off ("USB", "HDAUDIO", "BTHENUM", …).
@@ -176,6 +185,54 @@ unsafe fn endpoint_volume(d: &IMMDevice) -> Result<IAudioEndpointVolume> {
         .context("device does not expose a volume control")
 }
 
+/// Start the holder without a console window of its own.
+const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+
+/// Full path of the executable behind a pid, if it can still be read.
+///
+/// This is what makes [`MirrorTarget::holder_pattern`] worth storing: Windows recycles
+/// pids, and terminating a stranger that happens to have inherited one would be a far
+/// worse bug than leaving a stale entry behind.
+fn holder_image(pid: u32) -> Option<String> {
+    unsafe {
+        let handle = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, false, pid).ok()?;
+        let mut buf = [0u16; 260];
+        let mut len = buf.len() as u32;
+        let ok = QueryFullProcessImageNameW(
+            handle,
+            PROCESS_NAME_FORMAT(0),
+            windows::core::PWSTR(buf.as_mut_ptr()),
+            &mut len,
+        );
+        let _ = windows::Win32::Foundation::CloseHandle(handle);
+        ok.ok()?;
+        Some(String::from_utf16_lossy(&buf[..len as usize]))
+    }
+}
+
+/// True only if the pid is still running *our* holder, not just any live process.
+pub fn holder_alive(t: &MirrorTarget) -> bool {
+    match holder_image(t.holder_pid) {
+        Some(path) => path.eq_ignore_ascii_case(&t.holder_pattern),
+        None => false,
+    }
+}
+
+/// Ends one holder. Killing it outright is not brutality but the contract: on Linux the
+/// module dies with its process even under `kill -9`, and Windows tears down the audio
+/// clients of a dead process just the same.
+fn stop_holder(t: &MirrorTarget) {
+    if !holder_alive(t) {
+        return;
+    }
+    unsafe {
+        if let Ok(handle) = OpenProcess(PROCESS_TERMINATE, false, t.holder_pid) {
+            let _ = TerminateProcess(handle, 0);
+            let _ = windows::Win32::Foundation::CloseHandle(handle);
+        }
+    }
+}
+
 impl MirrorBackend for WasapiBackend {
     fn devices(&self) -> Result<Vec<Device>> {
         unsafe {
@@ -208,16 +265,100 @@ impl MirrorBackend for WasapiBackend {
         }
     }
 
-    fn add_target(&mut self, _target: &DeviceId) -> Result<()> {
-        bail!("mirroring is not implemented on Windows yet (stage 2: WASAPI loopback)")
+    fn add_target(&mut self, target: &DeviceId) -> Result<()> {
+        // Fail before spawning anything if the device is gone.
+        self.find(target)?;
+
+        let source = DeviceId(self.default_id()?);
+        if *target == source {
+            bail!("that device is already the output everything plays to");
+        }
+
+        let mut m = match state::load()? {
+            // A mirror whose source is no longer the default describes a world that
+            // ended; start over rather than mixing two sources.
+            Some(m) if m.source == source => m,
+            Some(m) => {
+                for t in &m.targets {
+                    stop_holder(t);
+                }
+                Mirror {
+                    source: source.clone(),
+                    targets: Vec::new(),
+                }
+            }
+            None => Mirror {
+                source: source.clone(),
+                targets: Vec::new(),
+            },
+        };
+
+        if m.has_target(target) {
+            return Ok(());
+        }
+
+        let exe = std::env::current_exe().context("cannot locate own executable")?;
+        let image = exe.to_string_lossy().to_string();
+        let mut child = Command::new(&exe)
+            .arg("hold")
+            .arg(&target.0)
+            .creation_flags(CREATE_NO_WINDOW)
+            .stderr(Stdio::piped())
+            .spawn()
+            .context("cannot start the holder process")?;
+
+        // A format mismatch or a device in exclusive use shows up immediately. Reporting
+        // "mirroring" for a holder that already died would be the worst possible answer,
+        // so wait long enough to catch that and pass the real reason on.
+        std::thread::sleep(std::time::Duration::from_millis(500));
+        if let Some(status) = child.try_wait().context("cannot check on the holder")? {
+            let mut why = String::new();
+            if let Some(mut err) = child.stderr.take() {
+                use std::io::Read;
+                let _ = err.read_to_string(&mut why);
+            }
+            // The holder already formatted its own failure through anyhow, so strip the
+            // prefix rather than printing "Error: Error:".
+            let why = why.trim();
+            let why = why.strip_prefix("Error: ").unwrap_or(why);
+            if why.is_empty() {
+                bail!("the mirror stopped immediately ({status})");
+            }
+            bail!("{why}");
+        }
+
+        m.targets.push(MirrorTarget {
+            device: target.clone(),
+            holder_pid: child.id(),
+            holder_pattern: image,
+        });
+        state::save(&m)
     }
 
-    fn remove_target(&mut self, _target: &DeviceId) -> Result<()> {
-        bail!("mirroring is not implemented on Windows yet (stage 2: WASAPI loopback)")
+    fn remove_target(&mut self, target: &DeviceId) -> Result<()> {
+        let Some(mut m) = state::load()? else {
+            return Ok(());
+        };
+        for t in m.targets.iter().filter(|t| t.device == *target) {
+            stop_holder(t);
+        }
+        m.targets.retain(|t| t.device != *target);
+
+        // No targets left is not a mirror any more — leaving an empty record behind would
+        // make `status` claim something is running.
+        if m.targets.is_empty() {
+            state::clear()
+        } else {
+            state::save(&m)
+        }
     }
 
     fn stop_all(&mut self) -> Result<()> {
-        // Nothing can be running, so this genuinely succeeds instead of pretending.
+        if let Some(m) = state::load()? {
+            for t in &m.targets {
+                stop_holder(t);
+            }
+        }
         state::clear()
     }
 
@@ -235,9 +376,22 @@ impl MirrorBackend for WasapiBackend {
     }
 
     fn cleanup_stale(&mut self) -> Result<()> {
-        // Until stage 2 lands there is no process that could hold a mirror, so any state
-        // file is a leftover by definition.
-        state::clear()
+        let Some(mut m) = state::load()? else {
+            return Ok(());
+        };
+
+        // A holder that is gone took its audio with it, so the record is the only thing
+        // left to clean up. This is what keeps a crash from making `status` lie.
+        let before = m.targets.len();
+        m.targets.retain(holder_alive);
+        if m.targets.len() == before {
+            return Ok(());
+        }
+        if m.targets.is_empty() {
+            state::clear()
+        } else {
+            state::save(&m)
+        }
     }
 
     fn capabilities(&self) -> Result<Capabilities> {
