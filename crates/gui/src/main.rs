@@ -1,3 +1,7 @@
+// A window summoned by a keystroke must not drag a console window along behind it. Kept in
+// debug builds, where seeing panics and stray output is worth the extra window.
+#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
+
 //! Control window.
 //!
 //! The window shows **state first** and possibilities second. At a glance the user has to
@@ -85,13 +89,37 @@ fn backend() -> anyhow::Result<impl MirrorBackend> {
 #[cfg(not(any(target_os = "linux", target_os = "windows")))]
 compile_error!("no backend for this operating system yet (see windows-portierung.md)");
 
-fn main() -> eframe::Result<()> {
+/// Report something that stops the window from opening at all, and give up.
+///
+/// A release build on Windows has no console to print to, so stderr goes nowhere and the
+/// program would appear to do nothing — which is exactly the case a driverless machine
+/// hits, where the OpenGL window cannot be created. `user32` is always present; a crate
+/// for a single call would not earn its place.
+fn fatal(message: &str) -> ! {
+    #[cfg(all(target_os = "windows", not(debug_assertions)))]
+    {
+        #[link(name = "user32")]
+        extern "system" {
+            fn MessageBoxW(
+                hwnd: *mut core::ffi::c_void,
+                text: *const u16,
+                caption: *const u16,
+                flags: u32,
+            ) -> i32;
+        }
+        let wide = |s: &str| s.encode_utf16().chain(Some(0)).collect::<Vec<u16>>();
+        let (text, caption) = (wide(message), wide("Mirrik"));
+        // MB_ICONERROR
+        unsafe { MessageBoxW(core::ptr::null_mut(), text.as_ptr(), caption.as_ptr(), 0x10) };
+    }
+    eprintln!("{message}");
+    std::process::exit(1)
+}
+
+fn main() {
     let mut b = match backend() {
         Ok(b) => b,
-        Err(e) => {
-            eprintln!("{e:#}");
-            std::process::exit(1);
-        }
+        Err(e) => fatal(&format!("{e:#}")),
     };
 
     if let Err(e) = b.cleanup_stale() {
@@ -100,10 +128,7 @@ fn main() -> eframe::Result<()> {
 
     let app = match Window::new(b) {
         Ok(a) => a,
-        Err(e) => {
-            eprintln!("{e:#}");
-            std::process::exit(1);
-        }
+        Err(e) => fatal(&format!("{e:#}")),
     };
 
     let options = eframe::NativeOptions {
@@ -127,14 +152,22 @@ fn main() -> eframe::Result<()> {
         ..Default::default()
     };
 
-    eframe::run_native(
+    let opened = eframe::run_native(
         "Mirrik",
         options,
         Box::new(move |cc| {
             theme::install_fonts(&cc.egui_ctx);
             Ok(Box::new(app))
         }),
-    )
+    );
+    if let Err(e) = opened {
+        fatal(&format!(
+            "Mirrik could not open its window: {e}\n\n\
+             This needs a working graphics driver - a Remote Desktop session or a fresh \
+             install without one cannot show it. The command line works either way: run \
+             `mirrik devices` in a terminal."
+        ));
+    }
 }
 
 struct Window<B: MirrorBackend> {
@@ -311,8 +344,9 @@ impl<B: MirrorBackend> Window<B> {
         let sliders = 1.0 + assumed;
         // Header, source block, the two headings, footer and the four rules between them
         // add up to a constant; each fader and each device row is a fixed block on top.
-        // Measured against the real window at both extremes, not derived.
-        280.0 + 62.0 * sliders + 47.0 * list
+        // Measured against the real window at both extremes, not derived. The 14 is the
+        // footer's second line — it is always drawn, so this stays a constant.
+        294.0 + 62.0 * sliders + 47.0 * list
     }
 
     /// One fader with its label and boxed readout. Returns true when the user let go.
@@ -621,21 +655,26 @@ impl<B: MirrorBackend> Window<B> {
 
         block(14, 0).show(ui, |ui| ui.add_space(0.0));
         theme::rule(ui, &p);
+        // Two lines, because one will not hold it: mono runs a third wider than Archivo,
+        // and "x stop all" only fitted on the line where the focus was already on a device.
+        // Standing on a fader, the one key that stops everything was invisible. Movement on
+        // the first line, the two ways out on the second — where they stay put.
         block(11, 12).show(ui, |ui| {
-            ui.label(theme::text(
-                match self.focus {
-                    Focus::Source | Focus::Target(_) => {
-                        "up/down focus · left/right volume · 1-9 toggle · Esc close"
-                    }
-                    Focus::Device(_) if self.mirroring() => {
-                        "up/down focus · Enter add or remove · x stop all · Esc close"
-                    }
-                    Focus::Device(_) => "up/down focus · Enter mirror here · 1-9 direct · Esc close",
-                },
-                p.mono(10.0),
-                p.ghost,
-                0.0,
-            ));
+            ui.spacing_mut().item_spacing.y = 3.0;
+            let moving = match self.focus {
+                Focus::Source | Focus::Target(_) => "up/down focus · left/right volume · 1-9 toggle",
+                Focus::Device(_) if self.mirroring() => {
+                    "up/down focus · Enter add or remove · 1-9 direct"
+                }
+                Focus::Device(_) => "up/down focus · Enter mirror here · 1-9 direct",
+            };
+            let leaving = if self.mirroring() {
+                "x stop mirroring · Esc close, mirror keeps running"
+            } else {
+                "Esc close"
+            };
+            ui.label(theme::text(moving, p.mono(10.0), p.ghost, 0.0));
+            ui.label(theme::text(leaving, p.mono(10.0), p.ghost, 0.0));
         });
 
         self.reveal_focus = false;
