@@ -77,125 +77,110 @@ may differ between them and are converted for you.
 - **Follows your system theme**, light or OLED black.
 - **Keyboard-driven window**, plus a scriptable command line with `--json` on everything.
 
-## Install — Windows
+## Install
 
-There is a guided setup script. Open PowerShell in the folder you unpacked or cloned into,
-and run:
+Two routes, same result. The **guided script** asks before every step, needs no
+administrator rights and can undo itself. **By hand** is a copy and a key binding — the
+script only does it for you and checks the traps first.
 
-```powershell
-powershell -ExecutionPolicy Bypass -File install.ps1
-```
-
-The `-ExecutionPolicy Bypass` is not a workaround for anything shady — Windows refuses to
-run *any* unsigned `.ps1` by default, including ones you wrote yourself five minutes ago.
-
-It asks before every step, needs no administrator rights, and:
-
-- checks this machine can run it at all — Windows version, processor architecture against
-  the architecture the binaries were actually built for, and whether there is a real
-  display driver, because the window is drawn with OpenGL and a Remote Desktop session or
-  a driverless fresh install has none. The command line works either way;
-- copies both programs somewhere permanent and shows you their checksums;
-- adds that folder to your `PATH` — through the registry, keeping the entry expandable, so
-  any `%USERPROFILE%`-style entries you already had stay variables instead of being frozen
-  into literal paths;
-- warns if another `mirrik.exe` is already on your `PATH` somewhere else;
-- creates a Start menu shortcut with a hotkey, after checking your existing shortcuts for
-  one that already claims the same combination. Windows hands a duplicate to whichever it
-  finds first and never mentions it.
-
-To undo all of it:
+### Windows
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File install.ps1 -Uninstall
+powershell -ExecutionPolicy Bypass -File install.ps1               # set up
+powershell -ExecutionPolicy Bypass -File install.ps1 -Uninstall    # take it all back
 ```
 
-That stops any running mirror first — Windows will not delete a running `.exe` — then
-removes the files, the `PATH` entry and the shortcut, asking about each.
+> `-ExecutionPolicy Bypass` is nothing shady: Windows refuses to run *any* unsigned `.ps1`,
+> including one you wrote yourself five minutes ago.
+
+It checks the machine first — Windows version, architecture, and a real display driver,
+because the window is OpenGL and will not open over Remote Desktop (the command line will).
+Then it copies both programs, puts them on your `PATH`, and offers a Start menu shortcut
+carrying a hotkey.
+
+That hotkey gets checked twice: against shortcuts that already claim the combination —
+Windows gives it to whichever it finds first and never says so — and against your keyboard
+layout, because Windows delivers AltGr as Ctrl+Alt. On a German layout `Ctrl+Alt+Q` would
+cost you `@` for as long as it exists.
+
+`-Uninstall` lists what it found — the programs, the `PATH` entry, the shortcut, the state
+folder — and removes all of it after one confirmation. A running mirror is stopped first,
+because Windows will not delete a running `.exe`; say no and even that is left alone.
 
 <details>
-<summary>Or do it by hand</summary>
+<summary><b>By hand instead</b></summary>
 
-1. Put `mirrik.exe` and `mirrik-gui.exe` somewhere permanent, for example
+1. Put `mirrik.exe` and `mirrik-gui.exe` somewhere permanent, e.g.
    `%LOCALAPPDATA%\Programs\Mirrik`.
-2. **Double-click `mirrik-gui.exe`.** That is the window with the device list — it is the one
-   you want. `mirrik.exe` (without `-gui`) is the command line version; double-clicking it
-   opens the window as well, so picking the wrong file is not a problem.
-3. For a keyboard shortcut: right-click `mirrik-gui.exe` → *Show more options* → *Create
-   shortcut*, move the shortcut into your Start menu, then right-click it → *Properties* →
-   click the *Shortcut key* field and press your combination. Windows only allows
-   `Ctrl+Alt+<key>` here, and the hotkey only works while the shortcut lives in the Start
-   menu or on the Desktop.
+2. **Double-click `mirrik-gui.exe`** — that is the window with the device list. `mirrik.exe`
+   is the command line version and opens the window too, so the wrong file is not a problem.
+3. Hotkey: right-click `mirrik-gui.exe` → *Show more options* → *Create shortcut*, move it
+   into your Start menu, then *Properties* → *Shortcut key* → press your combination.
+   Windows allows only `Ctrl+Alt+<key>`, so avoid keys your layout reaches with AltGr, and
+   leave the shortcut in the Start menu or on the Desktop — elsewhere the hotkey stops
+   working.
 
 </details>
 
-### About that SmartScreen warning
+<details>
+<summary><b>About that SmartScreen warning</b></summary>
 
-The first time you run Mirrik, Windows may well say this:
+> **Windows protected your PC** — Microsoft Defender SmartScreen prevented an unrecognised
+> app from starting.
 
-> **Windows protected your PC**
-> Microsoft Defender SmartScreen prevented an unrecognised app from starting.
+There is no *Run* button on it. The way through is **More info → Run anyway**.
 
-There is no *Run* button on that dialog. The way through is **More info → Run anyway**.
+What it actually means is *"Microsoft has not seen this program often"*, not *"this program
+is dangerous"* — Mirrik carries no code signing certificate, since those cost a few hundred
+euros a year. It is also the exact dialog real malware needs you to click through, so the
+reason to trust this one is not that you dismissed it: the source is right here and you can
+build it yourself.
 
-Here is what is actually happening, without the hand-waving:
+The mark comes from the **download**, not from the program. `install.ps1` strips it, which
+is why you will usually not see the dialog after running it; by hand it is right-click →
+*Properties* → *Unblock*, or `Unblock-File .\mirrik-gui.exe`. Built from source there is no
+mark at all.
 
-- Mirrik is not signed with a code signing certificate. Those cost a few hundred euros a
-  year, and this is a free tool.
-- SmartScreen's warning means *"Microsoft has not seen this program often"*, not *"this
-  program is dangerous"*. It says the same thing about every new build of every unsigned
-  program, including ones from people you would trust.
-- It is also exactly the dialog real malware needs you to click through. The reason to
-  trust this one is not that you dismissed a warning — it is that the source is right here
-  and you can build it yourself.
+</details>
 
-Two practical notes:
+### Linux
 
-- The warning is attached to the **download**, not to the program. Windows marks anything
-  that came from a browser and passes the mark along to copies. `install.ps1` strips that
-  mark from the files it installs, which is why you usually will not see the dialog at all
-  after running it. By hand, the equivalent is right-click → *Properties* → tick *Unblock*,
-  or `Unblock-File .\mirrik-gui.exe` in PowerShell.
-- If you build from source with `cargo build --release`, there is no mark and no warning —
-  the files never came from the internet.
-
-## Install — Linux
-
-Requires **PipeWire**, and four of its command line tools: `pactl`, `pw-cli`, `pw-dump` and
-`pw-metadata`. Mirrik drives PipeWire through those rather than linking against
-`libpipewire`, and several distributions ship the daemon and its tools as separate packages
-— so a system can be running PipeWire perfectly and still be missing `pw-cli`.
+Needs **PipeWire** and four of its command line tools — `pactl`, `pw-cli`, `pw-dump`,
+`pw-metadata`. Mirrik drives PipeWire through those instead of linking `libpipewire`, and
+several distributions package the daemon and the tools separately, so a system can run
+PipeWire perfectly and still be missing `pw-cli`.
 
 ```sh
-pactl info | grep 'Server Name'      # should mention PipeWire
-```
-
-There is a guided setup script:
-
-```sh
+pactl info | grep 'Server Name'      # should say PipeWire
 ./install.sh
 ```
 
-It checks those four tools and, if any are missing, names the exact package command for
-your distribution (Debian, Ubuntu and derivatives, Fedora and derivatives — including the
-image-based ones that need `rpm-ostree` — Arch, openSUSE, Alpine, Void, Gentoo, NixOS).
-Then it installs the two binaries, adds a desktop entry, and works out the key-binding line
-for your setup:
+If a tool is missing it names the exact package command for your distribution (Debian,
+Ubuntu, Fedora — including the image-based ones on `rpm-ostree` — Arch, openSUSE, Alpine,
+Void, Gentoo, NixOS). Then it installs both binaries, adds a desktop entry, and works out
+the key binding for your desktop:
 
 | | |
 |---|---|
-| **Hyprland, Sway, i3, river, bspwm/sxhkd** | exact config lines, offered for appending |
-| **awesome** | the same, in Lua, using the modern `append_global_keybindings` API |
-| **niri** | the lines, but never appended — niri keeps all binds in one block |
-| **GNOME, Cinnamon, XFCE** | run for you via `gsettings` / `xfconf-query`, if you say yes |
-| **KDE Plasma** | by hand, because Plasma rewrites its own shortcut file underneath you |
+| **Hyprland, Sway, i3, river, bspwm/sxhkd, awesome** | the exact config lines, offered for appending |
+| **GNOME, Cinnamon, XFCE** | set for you via `gsettings` / `xfconf-query`, if you say yes |
+| **niri, KDE Plasma** | the lines to paste yourself — both rewrite their own config |
 
-It shows every line before writing anything, marks what it added so you can find it again,
-never writes the same block twice, and leaves generated configs (Nix, Home Manager,
-chezmoi) alone — appending to those lasts until the next rebuild.
+Every line is shown before anything is written, what it adds is marked so you can find it
+again, the same block is never written twice, and generated configs (Nix, Home Manager,
+chezmoi) are left alone — appending to those lasts until the next rebuild.
+
+There is no `--uninstall` here, because everything it does is three lines to undo, and it
+prints them when it finishes:
+
+```sh
+rm ~/.local/bin/mirrik ~/.local/bin/mirrik-gui
+rm ~/.local/share/applications/mirrik.desktop
+# and delete the '# --- Mirrik ---' block from your compositor config
+```
 
 <details>
-<summary>Or do it by hand</summary>
+<summary><b>By hand instead</b></summary>
 
 ```sh
 cargo build --release --manifest-path code/mirrik/Cargo.toml
@@ -204,15 +189,14 @@ install -Dm755 code/mirrik/target/release/mirrik     ~/.local/bin/mirrik
 install -Dm755 code/mirrik/target/release/mirrik-gui ~/.local/bin/mirrik-gui
 ```
 
-Bind the window to a key in your compositor — this is the intended way to use it. Hyprland,
-as an example:
+Bind the window to a key — this is the intended way to use it. Hyprland, as an example:
 
 ```
 bind = SUPER SHIFT, M, exec, mirrik-gui
 ```
 
-Wayland compositors decide window placement themselves, so the window also wants a rule
-that floats and centres it (Hyprland; before 0.49 these were called `windowrulev2`):
+Wayland compositors place windows themselves, so it also wants a rule that floats and
+centres it (Hyprland; before 0.49 these were `windowrulev2`):
 
 ```
 windowrule = float, class:^(mirrik)$
@@ -295,8 +279,9 @@ this continuously; you may hear an occasional faint tick after hours of use.
 
 ## Licence
 
-MIT. Do what you like with it.
+[MIT](LICENSE). Do what you like with it.
 
 The window is set in [Archivo](https://github.com/Omnibus-Type/Archivo) and
 [JetBrains Mono](https://github.com/JetBrains/JetBrainsMono), both under the SIL Open Font
-Licence; the licences ship next to the fonts in `code/mirrik/gui/assets/`.
+Licence — which covers the two font files only, not the rest of the project. Those licences
+ship next to the fonts in `code/mirrik/gui/assets/`.
