@@ -1,7 +1,9 @@
 [package]
 name = "mirrik-gui"
-version = "0.1.0"
-edition = "2021"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Window for Mirrik: pick the devices to mirror sound to"
 
 [[bin]]
 name = "mirrik-gui"
@@ -11,9 +13,9 @@ path = "src/main.rs"
 anyhow.workspace = true
 mirrik-core.workspace = true
 
-# glow statt wgpu: das Fenster soll auf Tastendruck sofort da sein, nicht erst einen
-# Grafik-Stack hochfahren. default-features=false wirft u. a. die Persistenz raus,
-# die hier nichts zu speichern hätte.
+# glow rather than wgpu: the window has to be there the moment the key is pressed, not
+# after a graphics stack has started. `default-features = false` drops the persistence
+# feature among others, which would have nothing here to save.
 eframe = { version = "0.36", default-features = false, features = [
     "glow",
     "wayland",

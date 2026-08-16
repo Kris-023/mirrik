@@ -1,7 +1,9 @@
 [package]
 name = "mirrik-backend-windows"
-version = "0.1.0"
-edition = "2021"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "WASAPI loopback backend for Mirrik: mirrors audio without creating a device"
 
 [dependencies]
 anyhow.workspace = true

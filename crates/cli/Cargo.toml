@@ -1,7 +1,9 @@
 [package]
 name = "mirrik-cli"
-version = "0.1.0"
-edition = "2021"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Play the same sound on two or more output devices at once"
 
 [[bin]]
 name = "mirrik"

@@ -2,8 +2,14 @@
 resolver = "2"
 members = ["core", "backend-linux", "backend-windows", "cli", "gui"]
 
-# Gemeinsame Abhängigkeiten an einer Stelle, damit Linux- und Windows-Backend
-# nicht auseinanderdriften.
+# Kept here so the five crates cannot drift apart on version, edition or licence.
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+
+# Shared dependencies in one place, so the Linux and Windows backends cannot drift
+# apart on a version.
 [workspace.dependencies]
 anyhow = "1"
 serde = { version = "1", features = ["derive"] }
@@ -15,7 +21,7 @@ mirrik-backend-linux = { path = "backend-linux" }
 mirrik-backend-windows = { path = "backend-windows" }
 
 [profile.release]
-# Kleines, schnell startendes Werkzeug — es wird per Tastenkürzel aufgerufen.
+# A small tool that starts fast: it is opened by a keystroke, not left running.
 opt-level = "s"
 lto = true
 strip = true
