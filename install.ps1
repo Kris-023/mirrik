@@ -67,6 +67,34 @@ function Get-UserPathRaw {
     } finally { $key.Close() }
 }
 
+# Windows delivers AltGr as Ctrl+Alt, and a shortcut hotkey can only be Ctrl+Alt+<key>. On a
+# German, French, Polish ... layout that means the hotkey quietly eats a character the user
+# types: Ctrl+Alt+Q is @, Ctrl+Alt+E is EUR. Ask the layout which keys those are.
+Add-Type -Namespace Mirrik -Name Keyboard -MemberDefinition @'
+[DllImport("user32.dll")] public static extern IntPtr GetKeyboardLayout(uint idThread);
+[DllImport("user32.dll", CharSet = CharSet.Unicode)] public static extern short VkKeyScanEx(char ch, IntPtr dwhkl);
+'@
+
+# Returns @{ 'Q' = '@'; 'E' = "€"; ... } for the active layout, empty on US-style ones.
+function Get-AltGrKeys {
+    $hkl = [Mirrik.Keyboard]::GetKeyboardLayout(0)
+    $found = @{}
+    # Walking the characters rather than the keys: every AltGr character a Windows layout
+    # produces lives in Latin-1/Extended-A/B, plus the euro sign. ToUnicodeEx would answer
+    # the other direction but can leave a dead key half-pressed behind - this cannot.
+    foreach ($code in @(0x20..0x24F) + @(0x20AC)) {
+        $scan = [Mirrik.Keyboard]::VkKeyScanEx([char]$code, $hkl)
+        if ($scan -eq -1) { continue }
+        if (((($scan -shr 8) -band 0xFF) -band 6) -ne 6) { continue }   # 2|4 = Ctrl+Alt = AltGr
+        $vk = $scan -band 0xFF
+        # Only the keys a hotkey may use: 0-9 and A-Z, whose virtual key codes are their ASCII.
+        if ($vk -lt 0x30 -or $vk -gt 0x5A -or ($vk -gt 0x39 -and $vk -lt 0x41)) { continue }
+        $key = [string][char]$vk
+        if (-not $found.ContainsKey($key)) { $found[$key] = [string][char]$code }
+    }
+    return $found
+}
+
 function Set-UserPathRaw([string]$value) {
     $key = [Microsoft.Win32.Registry]::CurrentUser.OpenSubKey('Environment', $true)
     try {
@@ -124,51 +152,93 @@ $shortcutPath = Join-Path $startMenu 'Mirrik.lnk'
 if ($Uninstall) {
     Heading 'Removing Mirrik'
 
-    # Order matters: Windows will not delete a running executable, and each mirrored
-    # destination is held open by its own mirrik.exe.
     $shell = New-Object -ComObject WScript.Shell
+    $entries = (Get-UserPathRaw) -split ';' | Where-Object { $_ -ne '' }
+    $state = Join-Path $env:LOCALAPPDATA 'mirrik'
+
+    # Where it went is worked out, not asked. The shortcut points straight at it; failing
+    # that, the PATH entry *is* it; failing both, there is the default. Asking would be a
+    # keypress for an answer the machine already has - and the folder is named in the plan
+    # below before anything is deleted, which is the check that matters.
     $installed = $null
     if (Test-Path $shortcutPath) {
-        $installed = Split-Path $shell.CreateShortcut($shortcutPath).TargetPath -Parent
+        $target = $shell.CreateShortcut($shortcutPath).TargetPath
+        if ($target) { $installed = Split-Path $target -Parent }
+    }
+    if (-not $installed) {
+        $hit = $entries | Where-Object {
+            Test-Path (Join-Path ([Environment]::ExpandEnvironmentVariables($_)) 'mirrik.exe')
+        } | Select-Object -First 1
+        if ($hit) { $installed = [Environment]::ExpandEnvironmentVariables($hit) }
     }
     if (-not $installed) { $installed = Join-Path $env:LOCALAPPDATA 'Programs\Mirrik' }
-    $installed = Ask '  Which folder was it installed into' $installed
 
+    # Compared expanded: a PATH written by hand may hold %LOCALAPPDATA% where this holds the
+    # real path, and the two are the same folder. The raw entries are what gets written back.
+    $onPath = @($entries | Where-Object {
+        [Environment]::ExpandEnvironmentVariables($_) -eq $installed
+    })
+
+    # What is actually there is worked out first and shown in one go: uninstalling is a
+    # single decision, not four. Each piece is looked for independently - a folder someone
+    # deleted by hand must not leave the PATH entry and the shortcut behind for good.
+    $plan = @()
+    if (Test-Path $installed)    { $plan += "the programs in $installed" }
+    if ($onPath.Count -gt 0)     { $plan += "the PATH entry for that folder" }
+    if (Test-Path $shortcutPath) { $plan += 'the Start menu shortcut, and its hotkey with it' }
+    if (Test-Path $state)        { $plan += "the leftover state folder $state" }
+
+    if ($plan.Count -eq 0) {
+        Say '  Nothing of Mirrik is installed here - there is nothing to remove.' Green
+        Say ''
+        exit 0
+    }
+
+    Say '  This removes:' DarkGray
+    $plan | ForEach-Object { Say "    - $_" Gray }
+    Say ''
+    if (-not (Confirm '  Remove all of it?')) {
+        Say '  Nothing was changed.' DarkGray
+        Say ''
+        exit 0
+    }
+    Say ''
+
+    # Only now, so answering "no" above leaves a running mirror alone.
     $cli = Join-Path $installed 'mirrik.exe'
     if (Test-Path $cli) {
-        Say '  Stopping any running mirror first - Windows will not delete a running .exe.' DarkGray
+        Say '  Stopping any running mirror - Windows will not delete a running .exe.' DarkGray
         & $cli off 2>&1 | Out-Null
         Start-Sleep -Milliseconds 400
     }
 
-    if ((Test-Path $installed) -and (Confirm "  Delete $installed ?")) {
+    if (Test-Path $installed) {
+        Say "  Deleting $installed" DarkGray
         try {
             Remove-Item $installed -Recurse -Force
-            Say '  Deleted.' Green
+            Say '    gone.' Green
         } catch {
-            Say "  Could not delete it: $($_.Exception.Message)" Red
-            Say '  Something in there is probably still running. Close the Mirrik window and retry.' DarkGray
+            Say "    could not delete it: $($_.Exception.Message)" Red
+            Say '    something in there is probably still running - close the Mirrik window and run this again.' DarkGray
         }
     }
 
-    $raw = Get-UserPathRaw
-    $entries = $raw -split ';' | Where-Object { $_ -ne '' }
-    if ($entries -contains $installed) {
-        if (Confirm '  Remove it from your PATH?') {
-            Set-UserPathRaw (($entries | Where-Object { $_ -ne $installed }) -join ';')
-            Say '  Removed.' Green
-        }
+    if ($onPath.Count -gt 0) {
+        Say '  Removing the PATH entry' DarkGray
+        Set-UserPathRaw (($entries | Where-Object { $onPath -notcontains $_ }) -join ';')
+        Say '    gone. Open a new terminal for it to take effect.' Green
     }
 
-    if ((Test-Path $shortcutPath) -and (Confirm '  Delete the Start menu shortcut?')) {
+    if (Test-Path $shortcutPath) {
+        Say "  Deleting $shortcutPath" DarkGray
         Remove-Item $shortcutPath -Force
-        Say '  Deleted.' Green
+        Say '    gone.' Green
     }
 
-    $state = Join-Path $env:LOCALAPPDATA 'mirrik'
-    if ((Test-Path $state) -and (Confirm "  Delete the leftover state folder $state ?")) {
+    if (Test-Path $state) {
+        Say "  Deleting $state" DarkGray
         Remove-Item $state -Recurse -Force
-        Say '  Deleted.' Green
+        Say '    gone.' Green
     }
 
     Say ''
@@ -259,9 +329,11 @@ if ($adapters.Count -gt 0 -and -not $realGpu) {
 Heading '2. The program itself'
 
 $root = $PSScriptRoot
+# Deliberately not `target\debug`: it looks like a find, but installs whatever a developer
+# last compiled - unoptimised, and carrying any debug output that was never meant to ship.
+# If only a debug build exists, saying so and offering to build properly is the better answer.
 $candidates = @(
     (Join-Path $root 'code\mirrik\target\release'),   # built from this repository
-    (Join-Path $root 'code\mirrik\target\debug'),
     $root                                            # unpacked release archive
 )
 
@@ -428,14 +500,33 @@ if (Confirm '  Create the shortcut?') {
         Say "  ($($taken.Count) other shortcut(s) already carry a hotkey; conflicts will be flagged.)" DarkGray
     }
 
+    $altgr = Get-AltGrKeys
+    if ($altgr.Count -gt 0) {
+        $examples = ($altgr.GetEnumerator() | Sort-Object Name | Select-Object -First 3 |
+            ForEach-Object { "Ctrl+Alt+$($_.Name) types $($_.Value)" }) -join ', '
+        Say '  Your keyboard layout uses AltGr, and Windows delivers AltGr as Ctrl+Alt.' Yellow
+        Say "  A hotkey on one of those keys takes that character away: $examples." DarkGray
+        Say ''
+    }
+
+    # Letters and digits that carry nothing on a European layout, so the suggestion is safe.
+    $suggestion = @('J', 'K', 'L', 'T', 'U', 'V', 'W', 'Z', '1', '4', '5', '6') |
+        Where-Object { -not $altgr.ContainsKey($_) -and -not $taken["CTRL+ALT+$_"] -and -not $taken["ALT+CTRL+$_"] } |
+        Select-Object -First 1
+    if (-not $suggestion) { $suggestion = 'M' }
+
     $key = $null
     while (-not $key) {
-        $typed = (Ask '  Ctrl+Alt+  which key? (a single letter or digit)' 'M').ToUpper()
+        $typed = (Ask '  Ctrl+Alt+  which key? (a single letter or digit)' $suggestion).ToUpper()
         if ($typed -notmatch '^[A-Z0-9]$') {
             Say '  One letter or digit, nothing else - that is all Windows accepts.' Yellow
             continue
         }
-        $combo = "CTRL+ALT+$typed"
+        if ($altgr.ContainsKey($typed)) {
+            Say "  You type $($altgr[$typed]) with AltGr+$typed, and Windows cannot tell the two apart." Yellow
+            Say "  Taking this key means losing $($altgr[$typed]) everywhere." DarkGray
+            if (Confirm '  Pick a different key?') { continue }
+        }
         # Windows stores it in this order; check both spellings rather than trust one.
         $clash = $taken["CTRL+ALT+$typed"]
         if (-not $clash) { $clash = $taken["ALT+CTRL+$typed"] }
