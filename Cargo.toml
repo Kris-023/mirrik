@@ -2,6 +2,16 @@
 resolver = "2"
 members = ["core", "backend-linux", "backend-windows", "cli", "gui"]
 
+# A bare `cargo build` must work on a fresh clone, on either platform. `members` knows
+# nothing about targets, so it would drag the foreign backend in and fail to compile it;
+# `cli` and `gui` already pick the right one through `[target.'cfg(target_os = ...)']`.
+#
+# The price: `cargo test` on its own now leaves the backend's own tests out, and
+# `--workspace` is not the way back - that asks for the foreign backend again. Name your
+# own backend instead, which is also the one command that reads the same on both systems:
+#   cargo test --release -p mirrik-core -p mirrik-backend-linux -p mirrik-cli -p mirrik-gui
+default-members = ["core", "cli", "gui"]
+
 # Kept here so the five crates cannot drift apart on version, edition or licence.
 [workspace.package]
 version = "0.1.0"

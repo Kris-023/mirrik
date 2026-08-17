@@ -234,7 +234,10 @@ heading '3. The program itself'
 
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source_dir=''
-for dir in "$here/code/mirrik/target/release" "$here/code/mirrik/target/debug" "$here"; do
+# Only release builds and the script's own folder. `target/debug` is deliberately not a
+# candidate: a stray debug build there would be installed over a proper release without
+# anyone noticing.
+for dir in "$here/code/mirrik/target/release" "$here"; do
     if [ -x "$dir/mirrik" ] && [ -x "$dir/mirrik-gui" ]; then
         source_dir="$dir"
         break
@@ -246,12 +249,17 @@ if [ -z "$source_dir" ]; then
     if have cargo; then
         dim '  Rust is installed, so they can be built now. The first build takes a few'
         dim '  minutes and needs an internet connection for the dependencies.'
+        # -p even though the workspace's default-members already exclude the foreign
+        # backend: this way the build does not silently depend on a setting in a file the
+        # installer never reads. Without either, cargo would build backend-windows here
+        # and stop with 16 errors from `windows-future`.
         if confirm '  Build them now?'; then
-            cargo build --release --manifest-path "$here/code/mirrik/Cargo.toml"
+            cargo build --release --manifest-path "$here/code/mirrik/Cargo.toml" \
+                        -p mirrik-cli -p mirrik-gui
             source_dir="$here/code/mirrik/target/release"
         else
             dim '  Nothing was changed. Build them yourself with:'
-            say "    cargo build --release --manifest-path $here/code/mirrik/Cargo.toml"
+            say "    cargo build --release --manifest-path $here/code/mirrik/Cargo.toml -p mirrik-cli -p mirrik-gui"
             exit 1
         fi
     else
@@ -271,6 +279,7 @@ install -Dm755 "$source_dir/mirrik"     "$bindir/mirrik"
 install -Dm755 "$source_dir/mirrik-gui" "$bindir/mirrik-gui"
 ok "  Installed into $bindir"
 
+path_rc=''   # set below if a shell rc ends up holding a Mirrik block (set -u is on)
 case ":$PATH:" in
     *":$bindir:"*) ;;
     *)
@@ -289,12 +298,16 @@ case ":$PATH:" in
         say ''
         # Guarded like the compositor configs: run twice in the same terminal - where the
         # PATH has not been picked up yet - and this would otherwise append twice.
+        # path_rc is set in both cases, so the closing summary can name every file that
+        # holds a Mirrik block - a block this script wrote earlier counts just as much.
         if [ -f "$rc" ] && grep -qFe "$MARK_TEXT" "$rc"; then
             dim "  $rc already has a Mirrik block. Open a new terminal to pick it up."
+            path_rc="$rc"
         elif confirm "  Append it to $rc?" n; then
             mkdir -p "$(dirname "$rc")"
             printf '\n%s\n%s\n%s\n' "$MARK_OPEN" "$line" "$MARK_CLOSE" >> "$rc"
             ok '  Appended. Open a new terminal for it to take effect.'
+            path_rc="$rc"
         fi
         ;;
 esac
@@ -697,4 +710,9 @@ dim '  To undo all of this:'
 say "    rm $bindir/mirrik $bindir/mirrik-gui"
 say "    rm $apps/mirrik.desktop"
 dim "    and delete the '# --- Mirrik ---' block from your compositor config"
+# Named only when a block is actually there - listing a file nobody touched invites
+# someone to go looking for a line that was never written.
+if [ -n "$path_rc" ]; then
+    dim "    and the same block from $path_rc (the PATH line)"
+fi
 say ''
