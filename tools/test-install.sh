@@ -101,6 +101,13 @@ printf '%s %s
 exit 0
 EOF
     done
+    # hyprctl nur, wenn der Fall eine Version vorgibt - seine Abwesenheit ist ein
+    # eigener Zweig, in dem der Installer die neue Schreibweise annimmt und das sagt.
+    if [ -n "${STUB_HYPR_VERSION:-}" ]; then
+        printf '#!/usr/bin/env bash\n[ "$1" = version ] && printf "Hyprland %s built from branch v%s\\n" "%s" "%s"\nexit 0\n' \
+            "$STUB_HYPR_VERSION" "$STUB_HYPR_VERSION" > "$d/hyprctl"
+    fi
+
     if [[ "$missing" != *" cargo "* ]]; then
         cat > "$d/cargo" <<'EOF'
 #!/usr/bin/env bash
@@ -117,7 +124,7 @@ run_case() {  # <name> <antworten> <pruef-funktion> [opts]
     local name="$1" answers="$2" check="$3" opts="${4:-}"
     local cfg='' pre='empty' server='PulseAudio (on PipeWire 1.6.8)'
     local missing='' lua='' nobins='' nopath='' repeat=1 pair kv
-    local osrelease='' shell_for_case=''
+    local osrelease='' shell_for_case='' hyprversion=''
     IFS=';' read -ra kv <<<"$opts"
     for pair in "${kv[@]}"; do
         [ -z "$pair" ] && continue
@@ -126,13 +133,14 @@ run_case() {  # <name> <antworten> <pruef-funktion> [opts]
             server) server="${pair#*=}" ;; missing) missing="${pair#*=}" ;;
             lua) lua=1 ;; nobins) nobins=1 ;; nopath) nopath=1 ;; repeat) repeat="${pair#*=}" ;;
             osrelease) osrelease="${pair#*=}" ;; shell) shell_for_case="${pair#*=}" ;;
+            hyprversion) hyprversion="${pair#*=}" ;;
         esac
     done
 
     local home; home="$(mktemp -d)"
     local stubs="$home/stubs"
     mkdir -p "$home/.config" "$home/.local/bin" "$home/.local/share/applications"
-    make_stubs "$stubs" "$server" ${missing//,/ }
+    STUB_HYPR_VERSION="$hyprversion" make_stubs "$stubs" "$server" ${missing//,/ }
 
     if [ -n "$cfg" ] && [ "$pre" != none ]; then
         mkdir -p "$home/$(dirname "$cfg")"
@@ -326,6 +334,17 @@ check_apt_called()    { installed_ok; grep -q 'sudo apt install pipewire' "$STUB
 check_pacman_called() { installed_ok; grep -q 'sudo pacman -S' "$STUBLOG" 2>/dev/null || echo "pacman wurde nicht aufgerufen"; }
 check_dnf_called()    { installed_ok; grep -q 'sudo dnf install' "$STUBLOG" 2>/dev/null || echo "dnf wurde nicht aufgerufen"; }
 check_nixos_hint()         { installed_ok; grep -q 'services.pipewire' <<<"$OUT" || echo "kein NixOS-Hinweis"; grep -q 'sudo ' <<<"$OUT" && echo "NixOS bekam einen imperativen Installationsbefehl"; return 0; }
+check_rulev2()  { installed_ok; grep -q 'windowrulev2 = float' <<<"$OUT" || echo "alte Fassung bekam nicht windowrulev2"; grep -q 'needs windowrulev2' <<<"$OUT" || echo "kein Hinweis zur Schreibweise"; }
+check_rule_neu(){
+    installed_ok
+    grep -qE 'windowrule = float' <<<"$OUT" || echo "neue Fassung bekam nicht windowrule"
+    grep -q 'windowrulev2 = ' <<<"$OUT" && echo "trotz neuer Fassung windowrulev2 geschrieben"
+    # Ohne diese Zeile waere der Fall auch gruen, wenn hyprctl gar nicht befragt wurde -
+    # dann faellt der Installer ohnehin auf die neue Schreibweise zurueck.
+    grep -q 'hyprctl was not found' <<<"$OUT" && echo "hyprctl wurde nicht gefunden - der Fall prueft nichts"
+    return 0
+}
+check_rule_angenommen() { installed_ok; grep -q 'hyprctl was not found' <<<"$OUT" || echo "kein Hinweis, dass die Version geraten wurde"; }
 check_eof() {   # stdin endet mitten in den Fragen
     canary_clean
     grep -qi 'unbound variable\|syntax error' <<<"$OUT" && echo "Shell-Fehler bei EOF"
@@ -346,6 +365,10 @@ CASES=(
   "awesome-append|$(a y 6 2 a 1 y)|check_appended|cfg=.config/awesome/rc.lua"
   "bspwm-append|$(a y 7 2 a 1 y)|check_appended|cfg=.config/sxhkd/sxhkdrc"
   "hyprland-print|$(a y 1 2 a 2)|check_printed|cfg=.config/hypr/hyprland.conf"
+  "hyprland-alt-0.48|$(a y 1 2 a 2)|check_rulev2|cfg=.config/hypr/hyprland.conf;hyprversion=0.48.1"
+  "hyprland-neu-0.56|$(a y 1 2 a 2)|check_rule_neu|cfg=.config/hypr/hyprland.conf;hyprversion=0.56.2"
+  "hyprland-genau-0.49|$(a y 1 2 a 2)|check_rule_neu|cfg=.config/hypr/hyprland.conf;hyprversion=0.49.0"
+  "hyprland-ohne-hyprctl|$(a y 1 2 a 2)|check_rule_angenommen|cfg=.config/hypr/hyprland.conf"
   "niri-print|$(a y 4 2 a 2)|check_printed|cfg=.config/niri/config.kdl"
   "sway-print|$(a y 2 2 a 2)|check_printed|cfg=.config/sway/config"
   "config-fehlt|$(a y 1 2 a 2)|check_printed|cfg=.config/hypr/hyprland.conf;pre=none"

@@ -221,6 +221,29 @@ else
     fi
 fi
 
+# The window is OpenGL, and eframe loads GL, Wayland and xkbcommon with dlopen rather
+# than linking them - `ldd mirrik-gui` lists libc and little else, so a missing one stays
+# invisible until the window refuses to open. The command line half does not care, which
+# is why this warns instead of stopping.
+if [ -n "${WAYLAND_DISPLAY:-}${DISPLAY:-}" ] && have ldconfig; then
+    gui_missing=()
+    for lib in libGL.so.1 libxkbcommon.so.0; do
+        ldconfig -p 2>/dev/null | grep -q "$lib" || gui_missing+=("$lib")
+    done
+    if [ -n "${WAYLAND_DISPLAY:-}" ]; then
+        ldconfig -p 2>/dev/null | grep -q libwayland-client.so.0 || gui_missing+=(libwayland-client.so.0)
+    else
+        ldconfig -p 2>/dev/null | grep -q libX11.so.6 || gui_missing+=(libX11.so.6)
+    fi
+    if [ ${#gui_missing[@]} -gt 0 ]; then
+        say ''
+        warn "  The window needs these at runtime and they are not installed: ${gui_missing[*]}"
+        dim '  They are loaded on demand, so nothing complains until the window opens and'
+        dim '  then does not. The command line half works either way.'
+        dim '  Look for packages named mesa or libglvnd, libxkbcommon, and libwayland.'
+    fi
+fi
+
 # ---------------------------------------------------------------- 2. is it PipeWire
 
 heading '2. Checking your audio server'
@@ -502,11 +525,23 @@ else
             config="$conf_home/hypr/hyprland.conf"
             # Wayland compositors place windows themselves, so the rules matter as much as
             # the binding: without them the window is tiled in with everything else.
+            # `windowrulev2` became `windowrule` in 0.49. The wrong spelling is not a
+            # warning but a config error at startup, so ask hyprctl instead of printing
+            # both and hoping. Without hyprctl, assume current and say so.
+            rule_keyword=windowrule
+            if have hyprctl; then
+                hypr_version="$(hyprctl version 2>/dev/null | grep -oE 'v?[0-9]+\.[0-9]+(\.[0-9]+)?' | head -n1 | tr -d v || true)"
+                if [ -n "$hypr_version" ] && ! version_ge "$hypr_version" 0.49; then
+                    rule_keyword=windowrulev2
+                    note="Hyprland $hypr_version needs windowrulev2, which is what these lines use. 0.49 and newer spell it windowrule."
+                fi
+            else
+                note="hyprctl was not found, so these lines assume 0.49 or newer. Older versions spell the two rules 'windowrulev2'."
+            fi
             snippet="$MARK_OPEN
 bind = $hypr, $upper, exec, $gui
-# Hyprland before 0.49 spells the next two 'windowrulev2'.
-windowrule = float, class:^(mirrik)\$
-windowrule = center, class:^(mirrik)\$
+$rule_keyword = float, class:^(mirrik)\$
+$rule_keyword = center, class:^(mirrik)\$
 $MARK_CLOSE" ;;
         2)
             config="$conf_home/sway/config"
