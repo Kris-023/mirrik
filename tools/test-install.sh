@@ -22,6 +22,20 @@ pass=0; fail=0; failed_names=()
 green=$'\033[32m'; red=$'\033[31m'; dim=$'\033[90m'; off=$'\033[0m'
 [ -t 1 ] || { green=''; red=''; dim=''; off=''; }
 
+# Ein PATH ohne /usr/bin: sonst findet der Installer dort jedes Werkzeug, das der Fall
+# ausgelassen hat, und "missing=" prueft nichts. Verlinkt werden nur die Programme, die
+# install.sh tatsaechlich aufruft - die Liste stammt aus einem grep ueber das Skript.
+make_minimal_path() {  # <ziel-dir>
+    local d="$1"; mkdir -p "$d"
+    local t src
+    for t in bash sh grep sed awk cat tr head tail sort uniq wc mkdir rmdir rm cp mv ln \
+             install chmod chown dirname basename env date mktemp uname id readlink find \
+             xargs cut expr tee touch stat getent tput sleep printf test true false; do
+        src="$(command -v "$t" 2>/dev/null)" || continue
+        ln -sf "$src" "$d/$t" 2>/dev/null
+    done
+}
+
 make_stubs() {  # <bin-dir> <server-name> <fehlende-werkzeuge...>
     local d="$1" server="$2"; shift 2
     local missing=" $* "
@@ -73,6 +87,20 @@ printf 'xfconf-query %s
 exit 0
 EOF
     fi
+    cat > "$d/sudo" <<'EOF'
+#!/usr/bin/env bash
+printf 'sudo %s
+' "$*" >> "$STUB_LOG"
+exit 0
+EOF
+    for pm in apt dnf pacman zypper apk xbps-install emerge rpm-ostree; do
+        cat > "$d/$pm" <<EOF
+#!/usr/bin/env bash
+printf '%s %s
+' "$pm" "\$*" >> "\$STUB_LOG"
+exit 0
+EOF
+    done
     if [[ "$missing" != *" cargo "* ]]; then
         cat > "$d/cargo" <<'EOF'
 #!/usr/bin/env bash
@@ -89,6 +117,7 @@ run_case() {  # <name> <antworten> <pruef-funktion> [opts]
     local name="$1" answers="$2" check="$3" opts="${4:-}"
     local cfg='' pre='empty' server='PulseAudio (on PipeWire 1.6.8)'
     local missing='' lua='' nobins='' nopath='' repeat=1 pair kv
+    local osrelease='' shell_for_case=''
     IFS=';' read -ra kv <<<"$opts"
     for pair in "${kv[@]}"; do
         [ -z "$pair" ] && continue
@@ -96,6 +125,7 @@ run_case() {  # <name> <antworten> <pruef-funktion> [opts]
             cfg) cfg="${pair#*=}" ;; pre) pre="${pair#*=}" ;;
             server) server="${pair#*=}" ;; missing) missing="${pair#*=}" ;;
             lua) lua=1 ;; nobins) nobins=1 ;; nopath) nopath=1 ;; repeat) repeat="${pair#*=}" ;;
+            osrelease) osrelease="${pair#*=}" ;; shell) shell_for_case="${pair#*=}" ;;
         esac
     done
 
@@ -113,10 +143,13 @@ run_case() {  # <name> <antworten> <pruef-funktion> [opts]
         fi
     fi
     [ -n "$lua" ] && { mkdir -p "$home/.config/hypr/subcfgs"; printf -- '-- binds\n' > "$home/.config/hypr/subcfgs/binds.lua"; }
+    [ -n "$osrelease" ] && printf 'ID=%s\nPRETTY_NAME="%s test"\n' "$osrelease" "$osrelease" > "$home/os-release"
     [ -z "$nobins" ] && cp "$stubs/mirrik" "$stubs/mirrik-gui" "$REPO/" 2>/dev/null
 
-    local path="$stubs:/usr/bin:/bin"
-    [ -z "$nopath" ] && path="$stubs:$home/.local/bin:/usr/bin:/bin"
+    local sysbin="$home/sysbin"
+    make_minimal_path "$sysbin"
+    local path="$stubs:$sysbin"
+    [ -z "$nopath" ] && path="$stubs:$home/.local/bin:$sysbin"
 
     local out rc i answer_lines
     answer_lines="$(printf '%s' "$answers" | tr ',' '\n')"
@@ -124,7 +157,8 @@ run_case() {  # <name> <antworten> <pruef-funktion> [opts]
         out="$(printf '%s\n' "$answer_lines" | env -i \
             HOME="$home" PATH="$path" \
             XDG_CONFIG_HOME="$home/.config" XDG_DATA_HOME="$home/.local/share" \
-            STUB_LOG="$home/stub.log" SHELL=/bin/bash TERM=dumb \
+            STUB_LOG="$home/stub.log" SHELL="${shell_for_case:-/bin/bash}" TERM=dumb \
+            ${osrelease:+MIRRIK_OS_RELEASE="$home/os-release"} \
             bash "$INSTALLER" 2>&1)"
         rc=$?
     done
@@ -266,6 +300,32 @@ check_reasked() {   # ungueltige Auswahl: Hinweis, erneute Frage, dann der richt
     grep -q 'Not one of the choices' <<<"$OUT" || echo "keine erneute Frage nach ungueltiger Eingabe"
     check_appended
 }
+check_no_server_check() {   # ohne pactl kann der Server nicht bestimmt werden
+    installed_ok; has_desktop
+    grep -q 'pactl is not installed' <<<"$OUT" || echo "kein Hinweis auf fehlendes pactl"
+}
+check_old_pw_warned() {
+    installed_ok
+    grep -q 'too old' <<<"$OUT" || echo "keine Warnung zur alten PipeWire-Fassung"
+    grep -q '0.3.64' <<<"$OUT" || echo "die geforderte Mindestversion wird nicht genannt"
+}
+check_version_unknown() {
+    installed_ok
+    grep -qi 'could not read the pipewire version' <<<"$OUT" || echo "kein Hinweis auf unlesbare Version"
+}
+check_generic_hint() {   # unbekannte Distribution: kein Paketbefehl, aber ein Weg
+    installed_ok
+    grep -qi 'package manager' <<<"$OUT" || echo "kein allgemeiner Hinweis fuer unbekannte Distributionen"
+    grep -qE 'apt install|pacman -S|dnf install|zypper' <<<"$OUT" && echo "ein Paketbefehl fuer eine fremde Distribution wurde vorgeschlagen"
+    return 0
+}
+check_distro_hint_apt()    { installed_ok; grep -q 'apt install' <<<"$OUT" || echo "kein apt-Befehl fuer Debian"; }
+check_distro_hint_pacman() { installed_ok; grep -q 'pacman -S' <<<"$OUT" || echo "kein pacman-Befehl fuer Arch"; }
+# Diese drei erreichen den eval-Zweig: geprueft wird, WAS er ausfuehren wuerde.
+check_apt_called()    { installed_ok; grep -q 'sudo apt install pipewire' "$STUBLOG" 2>/dev/null || echo "apt wurde nicht mit den PipeWire-Paketen aufgerufen"; }
+check_pacman_called() { installed_ok; grep -q 'sudo pacman -S' "$STUBLOG" 2>/dev/null || echo "pacman wurde nicht aufgerufen"; }
+check_dnf_called()    { installed_ok; grep -q 'sudo dnf install' "$STUBLOG" 2>/dev/null || echo "dnf wurde nicht aufgerufen"; }
+check_nixos_hint()         { installed_ok; grep -q 'services.pipewire' <<<"$OUT" || echo "kein NixOS-Hinweis"; grep -q 'sudo ' <<<"$OUT" && echo "NixOS bekam einen imperativen Installationsbefehl"; return 0; }
 check_eof() {   # stdin endet mitten in den Fragen
     canary_clean
     grep -qi 'unbound variable\|syntax error' <<<"$OUT" && echo "Shell-Fehler bei EOF"
@@ -309,12 +369,22 @@ CASES=(
   "pfad-zeile|,y,y,1,2,a,1,y|check_pathline|cfg=.config/hypr/hyprland.conf;nopath=1"
   "pulseaudio-abbruch|n|check_abort|server=PulseAudio;cfg=.config/hypr/hyprland.conf"
   "kein-audioserver|n|check_abort|server=;cfg=.config/hypr/hyprland.conf"
-  # AUSGESETZT: "missing=" wirkt nicht, solange /usr/bin im PATH liegt - der Installer
-  # findet dort das echte Werkzeug und meldet "All four present". Ein ehrlicher Test
-  # braeuchte einen PATH ohne /usr/bin, also eine Symlink-Farm der benoetigten Coreutils.
-  # Bis dahin lieber keine Faelle als gruene, die nichts pruefen.
-  #   "ohne-pw-cli|n,n|check_abort|missing=pw-cli;cfg=..."
-  #   "ohne-pactl|...|check_appended|missing=pactl;cfg=..."
+  # Seit dem Minimal-PATH (ohne /usr/bin) wirkt "missing=" wirklich.
+  "ohne-pw-cli-abgebrochen|n|check_abort|missing=pw-cli;cfg=.config/hypr/hyprland.conf"
+  "ohne-pw-cli-fortgesetzt|n,y,,y,1,2,a,1,y|check_appended|missing=pw-cli;cfg=.config/hypr/hyprland.conf"
+  "ohne-pactl|n,y,,y,1,2,a,1,y|check_no_server_check|missing=pactl;cfg=.config/hypr/hyprland.conf"
+  # --- Versionen
+  "pipewire-zu-alt-abgebrochen|n|check_abort|server=PulseAudio (on PipeWire 0.3.48);cfg=.config/hypr/hyprland.conf"
+  "pipewire-zu-alt-fortgesetzt|y,,y,1,2,a,1,y|check_old_pw_warned|server=PulseAudio (on PipeWire 0.3.48);cfg=.config/hypr/hyprland.conf"
+  "pipewire-genau-0364|,y,1,2,a,1,y|check_appended|server=PulseAudio (on PipeWire 0.3.64);cfg=.config/hypr/hyprland.conf"
+  "pipewire-version-unlesbar|,y,1,2,a,1,y|check_version_unknown|server=PipeWire;cfg=.config/hypr/hyprland.conf"
+  # --- Distributionen (os-release wird untergeschoben)
+  "distro-unbekannt|y,,y,1,2,a,1,y|check_generic_hint|missing=pw-cli;osrelease=exotix;cfg=.config/hypr/hyprland.conf"
+  "distro-debian-abgelehnt|n,y,,y,1,2,a,1,y|check_distro_hint_apt|missing=pw-cli;osrelease=debian;cfg=.config/hypr/hyprland.conf"
+  "distro-debian-ausgefuehrt|y,y,,y,1,2,a,1,y|check_apt_called|missing=pw-cli;osrelease=debian;cfg=.config/hypr/hyprland.conf"
+  "distro-arch-ausgefuehrt|y,y,,y,1,2,a,1,y|check_pacman_called|missing=pw-cli;osrelease=arch;cfg=.config/hypr/hyprland.conf"
+  "distro-fedora-ausgefuehrt|y,y,,y,1,2,a,1,y|check_dnf_called|missing=pw-cli;osrelease=fedora;cfg=.config/hypr/hyprland.conf"
+  "distro-nixos|y,,y,1,2,a,1,y|check_nixos_hint|missing=pw-cli;osrelease=nixos;cfg=.config/hypr/hyprland.conf"
   "ohne-binaries-ohne-cargo||check_abort|nobins=1;missing=cargo"
   "ohne-binaries-bau-abgelehnt|n|check_abort|nobins=1"
   # --- Missbrauch: Shell-Metazeichen in den beiden freien Textfeldern

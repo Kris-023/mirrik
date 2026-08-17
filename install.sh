@@ -53,6 +53,12 @@ confirm() {  # confirm <question> [y|n]  -> exit status
 
 have() { command -v "$1" >/dev/null 2>&1; }
 
+# Versionsvergleich ueber sort -V, damit 0.3.9 kleiner ist als 0.3.64 - ein Vergleich
+# als Text oder als Zahl bekommt genau das falsch.
+version_ge() {  # version_ge <have> <want>  -> 0 wenn have >= want
+    [ "$(printf '%s\n%s\n' "$2" "$1" | sort -V | head -n1)" = "$2" ]
+}
+
 # Auswahl aus einer festen Liste. Anything else is asked again - a wrong number must not
 # quietly become something the user did not pick. Empty input takes the default, which is
 # what Enter is for, and what an ended stdin falls back to.
@@ -131,9 +137,12 @@ done
 
 # Distribution family, for naming the packages rather than guessing at them.
 distro_id=''; distro_like=''; distro_name='your distribution'
-if [ -r /etc/os-release ]; then
+# Der Pfad ist ueberschreibbar, damit der Pruefstand die Distributionszweige erreichen
+# kann, ohne eine Distribution zu sein. Im Alltag bleibt es /etc/os-release.
+os_release="${MIRRIK_OS_RELEASE:-/etc/os-release}"
+if [ -r "$os_release" ]; then
     # shellcheck disable=SC1091
-    . /etc/os-release
+    . "$os_release"
     distro_id="${ID:-}"; distro_like="${ID_LIKE:-}"; distro_name="${PRETTY_NAME:-${NAME:-$distro_id}}"
 fi
 
@@ -220,6 +229,35 @@ if have pactl; then
     server="$(pactl info 2>/dev/null | sed -n 's/^Server Name: //p' || true)"
     if printf '%s' "$server" | grep -qi pipewire; then
         ok "  PipeWire it is: $server"
+
+        # Mirrik haengt seine Loopbacks ueber `target.object` an ein Geraet. Diese
+        # Eigenschaft gibt es erst ab PipeWire 0.3.64; davor hiess sie `node.target`,
+        # und zusammen mit `node.dont-reconnect` verbindet sich eine aeltere Fassung
+        # still gar nicht - kein Fehler, kein Ton, nichts. Das muss hier auffallen und
+        # nicht erst, wenn jemand die Taste drueckt.
+        # `|| true` ist hier Pflicht, nicht Zierde: grep liefert 1, wenn es nichts findet,
+        # und unter `set -e` beendet das die Zuweisung und damit das Skript. Ein Server,
+        # der sich ohne Versionsnummer meldet, haette den Installer wortlos abgebrochen.
+        pw_version="$(printf '%s' "$server" | grep -oiE 'pipewire[ -]*[0-9]+(\.[0-9]+)+' | grep -oE '[0-9]+(\.[0-9]+)+' | head -n1 || true)"
+        if [ -z "$pw_version" ] && have pw-cli; then
+            pw_version="$(pw-cli --version 2>/dev/null | grep -oE '[0-9]+(\.[0-9]+)+' | head -n1 || true)"
+        fi
+
+        if [ -z "$pw_version" ]; then
+            dim '  (Could not read the PipeWire version; 0.3.64 or newer is required.)'
+        elif version_ge "$pw_version" 0.3.64; then
+            ok "  Version $pw_version is new enough (0.3.64 or newer required)."
+        else
+            warn "  PipeWire $pw_version is too old. Mirrik needs 0.3.64 or newer."
+            say ''
+            dim '  Mirrik attaches its loopback with `target.object`, which older versions'
+            dim '  do not know. They do not report an error - the mirror simply never'
+            dim '  connects, and nothing plays on the second device.'
+            dim '  Ubuntu 22.04 and Debian bullseye ship older versions; a backport or a'
+            dim '  newer release fixes this.'
+            say ''
+            confirm '  Install anyway?' n || exit 1
+        fi
     elif [ -z "$server" ]; then
         warn '  No audio server answered. Is the session running?'
         dim '  If you are on a fresh install, `systemctl --user status pipewire` is the'
