@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["core", "backend-linux", "backend-windows", "cli", "gui"]
+members = ["crates/core", "crates/backend-linux", "crates/backend-windows", "crates/cli", "crates/gui"]
 
 # A bare `cargo build` must work on a fresh clone, on either platform. `members` knows
 # nothing about targets, so it would drag the foreign backend in and fail to compile it;
@@ -10,7 +10,7 @@ members = ["core", "backend-linux", "backend-windows", "cli", "gui"]
 # `--workspace` is not the way back - that asks for the foreign backend again. Name your
 # own backend instead, which is also the one command that reads the same on both systems:
 #   cargo test --release -p mirrik-core -p mirrik-backend-linux -p mirrik-cli -p mirrik-gui
-default-members = ["core", "cli", "gui"]
+default-members = ["crates/core", "crates/cli", "crates/gui"]
 
 # Kept here so the five crates cannot drift apart on version, edition or licence.
 [workspace.package]
@@ -26,9 +26,9 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 clap = { version = "4", features = ["derive"] }
 
-mirrik-core = { path = "core" }
-mirrik-backend-linux = { path = "backend-linux" }
-mirrik-backend-windows = { path = "backend-windows" }
+mirrik-core = { path = "crates/core" }
+mirrik-backend-linux = { path = "crates/backend-linux" }
+mirrik-backend-windows = { path = "crates/backend-windows" }
 
 [profile.release]
 # A small tool that starts fast: it is opened by a keystroke, not left running.

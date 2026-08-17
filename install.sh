@@ -237,7 +237,7 @@ source_dir=''
 # Only release builds and the script's own folder. `target/debug` is deliberately not a
 # candidate: a stray debug build there would be installed over a proper release without
 # anyone noticing.
-for dir in "$here/code/mirrik/target/release" "$here"; do
+for dir in "$here/target/release" "$here"; do
     if [ -x "$dir/mirrik" ] && [ -x "$dir/mirrik-gui" ]; then
         source_dir="$dir"
         break
@@ -254,12 +254,12 @@ if [ -z "$source_dir" ]; then
         # installer never reads. Without either, cargo would build backend-windows here
         # and stop with 16 errors from `windows-future`.
         if confirm '  Build them now?'; then
-            cargo build --release --manifest-path "$here/code/mirrik/Cargo.toml" \
+            cargo build --release --manifest-path "$here/Cargo.toml" \
                         -p mirrik-cli -p mirrik-gui
-            source_dir="$here/code/mirrik/target/release"
+            source_dir="$here/target/release"
         else
             dim '  Nothing was changed. Build them yourself with:'
-            say "    cargo build --release --manifest-path $here/code/mirrik/Cargo.toml -p mirrik-cli -p mirrik-gui"
+            say "    cargo build --release --manifest-path $here/Cargo.toml -p mirrik-cli -p mirrik-gui"
             exit 1
         fi
     else

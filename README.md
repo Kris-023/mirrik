@@ -183,10 +183,10 @@ rm ~/.local/share/applications/mirrik.desktop
 <summary><b>By hand instead</b></summary>
 
 ```sh
-cargo build --release --manifest-path code/mirrik/Cargo.toml
+cargo build --release --manifest-path Cargo.toml
 
-install -Dm755 code/mirrik/target/release/mirrik     ~/.local/bin/mirrik
-install -Dm755 code/mirrik/target/release/mirrik-gui ~/.local/bin/mirrik-gui
+install -Dm755 target/release/mirrik     ~/.local/bin/mirrik
+install -Dm755 target/release/mirrik-gui ~/.local/bin/mirrik-gui
 ```
 
 Bind the window to a key — this is the intended way to use it. Hyprland, as an example:
@@ -284,4 +284,4 @@ this continuously; you may hear an occasional faint tick after hours of use.
 The window is set in [Archivo](https://github.com/Omnibus-Type/Archivo) and
 [JetBrains Mono](https://github.com/JetBrains/JetBrainsMono), both under the SIL Open Font
 Licence — which covers the two font files only, not the rest of the project. Those licences
-ship next to the fonts in `code/mirrik/gui/assets/`.
+ship next to the fonts in `gui/assets/`.

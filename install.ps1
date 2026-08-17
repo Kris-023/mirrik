@@ -333,7 +333,7 @@ $root = $PSScriptRoot
 # last compiled - unoptimised, and carrying any debug output that was never meant to ship.
 # If only a debug build exists, saying so and offering to build properly is the better answer.
 $candidates = @(
-    (Join-Path $root 'code\mirrik\target\release'),   # built from this repository
+    (Join-Path $root 'target\release'),   # built from this repository
     $root                                            # unpacked release archive
 )
 
@@ -352,17 +352,17 @@ if (-not $source) {
         Say '  the first time and needs an internet connection for the dependencies.' DarkGray
         if (-not (Confirm '  Build them now?')) {
             Say '  Nothing was changed. Build them yourself with:' DarkGray
-            Say '    cargo build --release --manifest-path code\mirrik\Cargo.toml' Gray
+            Say '    cargo build --release --manifest-path Cargo.toml' Gray
             exit 1
         }
         Push-Location $root
         try {
-            cargo build --release --manifest-path 'code\mirrik\Cargo.toml'
+            cargo build --release --manifest-path 'Cargo.toml'
             if ($LASTEXITCODE -ne 0) { throw "cargo build failed with exit code $LASTEXITCODE" }
         } finally {
             Pop-Location
         }
-        $source = Join-Path $root 'code\mirrik\target\release'
+        $source = Join-Path $root 'target\release'
     } else {
         Say '  Rust is not installed either, so there is nothing to install.' Yellow
         Say '  Either download a release archive and run this script from inside it,' DarkGray
