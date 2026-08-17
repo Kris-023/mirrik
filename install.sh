@@ -275,6 +275,22 @@ fi
 ok "  Found them in: $source_dir"
 
 bindir="$(ask '  Install into' "$HOME/.local/bin")"
+
+# Ein Leerzeichen im Zielpfad bricht mehr, als es auf den ersten Blick scheint: die
+# Bind-Zeile jedes Compositors ist unquotiert (`exec, /pfad/mirrik-gui`), und ein
+# Desktop-Eintrag mit Leerzeichen im Exec muss nach Spezifikation zitiert werden, sonst
+# liest der Launcher den Rest als Argument. Beides faellt erst beim Tastendruck auf.
+case "$bindir" in
+    *[[:space:]]*)
+        warn '  That path contains a space.'
+        dim '  The key binding written into your compositor config is not quoted - most'
+        dim '  compositors would read everything after the space as an argument, and the'
+        dim '  key would silently do nothing. A path without spaces avoids the whole'
+        dim '  question; ~/.local/bin is the usual one.'
+        say ''
+        confirm '  Use it anyway?' n || bindir="$HOME/.local/bin"
+        ;;
+esac
 install -Dm755 "$source_dir/mirrik"     "$bindir/mirrik"
 install -Dm755 "$source_dir/mirrik-gui" "$bindir/mirrik-gui"
 ok "  Installed into $bindir"
@@ -324,12 +340,18 @@ say ''
 apps="${XDG_DATA_HOME:-$HOME/.local/share}/applications"
 if confirm '  Add it?'; then
     mkdir -p "$apps"
+    # Desktop Entry Specification, "Exec": ein Pfad mit Leerzeichen gehoert in doppelte
+    # Anfuehrungszeichen, sonst ist alles nach dem Leerzeichen ein Argument.
+    case "$bindir" in
+        *[[:space:]]*) exec_field="\"$bindir/mirrik-gui\"" ;;
+        *)             exec_field="$bindir/mirrik-gui" ;;
+    esac
     cat > "$apps/mirrik.desktop" <<DESKTOP
 [Desktop Entry]
 Type=Application
 Name=Mirrik
 Comment=Play the same sound on two or more output devices at once
-Exec=$bindir/mirrik-gui
+Exec=$exec_field
 Terminal=false
 Categories=AudioVideo;Audio;Settings;
 StartupWMClass=mirrik

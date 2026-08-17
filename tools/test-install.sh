@@ -193,6 +193,52 @@ check_pathline() {
 # Antworten werden als KOMMALISTE gefuehrt, nicht mit Zeilenumbruechen: `read` liest nur
 # bis zum ersten Umbruch, wodurch Pruef-Funktion und Optionen leer blieben - und jeder
 # mehrzeilige Fall "bestand", ohne irgendetwas zu pruefen.
+# --- Missbrauch und Unsinn -------------------------------------------------
+# Der Installer nimmt Text vom Nutzer und schreibt ihn in Befehlszeilen und Configs.
+# Diese Pruefungen fragen nicht "laeuft der Zweig durch", sondern "kann eine Eingabe
+# etwas anrichten, das niemand wollte".
+
+canary_clean() {   # nichts ausserhalb des Test-HOME angefasst
+    for c in /tmp/mirrik-pwned /tmp/mirrik-pwned2; do
+        [ -e "$c" ] && { echo "EINGABE HAT ETWAS AUSGEFUEHRT: $c wurde angelegt"; rm -f "$c"; }
+    done
+    return 0
+}
+check_injection() {   # Eingabe mit Shell-Metazeichen darf nichts ausfuehren
+    canary_clean
+    [ "$RC" = 0 ] || [ "$RC" = 1 ] || echo "unerwarteter Exit-Code $RC"
+    return 0
+}
+check_survives_nonsense() {   # Unsinnseingaben: kein Absturz, keine halbe Installation
+    canary_clean
+    grep -qi 'Traceback\|command not found\|unbound variable\|syntax error' <<<"$OUT" \
+        && echo "Fehlermeldung der Shell in der Ausgabe"
+    if [ -e "$HOME_UNDER_TEST/.local/bin/mirrik" ] && [ ! -e "$HOME_UNDER_TEST/.local/bin/mirrik-gui" ]; then
+        echo "halbe Installation: nur eine der beiden Binaries"
+    fi
+    return 0
+}
+check_space_warned() {   # Leerzeichen im Zielpfad: Warnung, und wenn angenommen, Exec zitiert
+    canary_clean
+    grep -q 'contains a space' <<<"$OUT" || echo "keine Warnung zum Leerzeichen"
+    local d="$HOME_UNDER_TEST/.local/share/applications/mirrik.desktop"
+    [ -f "$d" ] || { echo ".desktop fehlt"; return 0; }
+    local line; line=$(grep '^Exec=' "$d")
+    case "$line" in
+        *' '*) grep -q '^Exec="' "$d" || echo "Exec enthaelt ein Leerzeichen, ist aber nicht zitiert: $line" ;;
+    esac
+}
+check_space_declined() { # Warnung abgelehnt: Rueckfall auf ~/.local/bin
+    canary_clean
+    grep -q 'contains a space' <<<"$OUT" || echo "keine Warnung zum Leerzeichen"
+    [ -x "$HOME_UNDER_TEST/.local/bin/mirrik" ] || echo "kein Rueckfall auf ~/.local/bin"
+}
+check_eof() {   # stdin endet mitten in den Fragen
+    canary_clean
+    grep -qi 'unbound variable\|syntax error' <<<"$OUT" && echo "Shell-Fehler bei EOF"
+    return 0
+}
+
 a() {  # <desktop:y|n> <wm> <mods> <key> [weitere Antworten...]
     local d="$1" wm="$2" mods="$3" key="$4"; shift 4
     local rest=""; for x in "$@"; do rest="$rest,$x"; done
@@ -238,6 +284,20 @@ CASES=(
   #   "ohne-pactl|...|check_appended|missing=pactl;cfg=..."
   "ohne-binaries-ohne-cargo||check_abort|nobins=1;missing=cargo"
   "ohne-binaries-bau-abgelehnt|n|check_abort|nobins=1"
+  # --- Missbrauch: Shell-Metazeichen in den beiden freien Textfeldern
+  "injektion-taste|,y,1,2,a\";touch /tmp/mirrik-pwned;#,a,1,y|check_injection|cfg=.config/hypr/hyprland.conf"
+  "injektion-bindir|/tmp/x\";touch /tmp/mirrik-pwned2;#,y,1,2,a,2|check_injection|cfg=.config/hypr/hyprland.conf"
+  "leerzeichen-angenommen|/tmp/mirrik test bin,y,y,y,1,2,a,1,y|check_space_warned|cfg=.config/hypr/hyprland.conf"
+  "leerzeichen-abgelehnt|/tmp/mirrik test bin,n,y,1,2,a,1,y|check_space_declined|cfg=.config/hypr/hyprland.conf"
+  # --- Unsinn statt Auswahl
+  "wm-zahl-zu-gross|,y,99,2,a|check_survives_nonsense|cfg=.config/hypr/hyprland.conf"
+  "wm-buchstaben|,y,abc,2,a|check_survives_nonsense|cfg=.config/hypr/hyprland.conf"
+  "mods-unsinn|,y,1,9,a,2|check_survives_nonsense|cfg=.config/hypr/hyprland.conf"
+  "taste-mehrzeichig-dann-gueltig|,y,1,2,abc,a,1,y|check_appended|cfg=.config/hypr/hyprland.conf"
+  "taste-sonderzeichen-dann-gueltig|,y,1,2,%,q,1,y|check_appended|cfg=.config/hypr/hyprland.conf"
+  # --- stdin endet vorzeitig
+  "eof-sofort||check_eof|cfg=.config/hypr/hyprland.conf"
+  "eof-nach-drei|,y,1|check_eof|cfg=.config/hypr/hyprland.conf"
 )
 
 filter="${1:-}"
