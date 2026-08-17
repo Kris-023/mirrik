@@ -1,7 +1,7 @@
 //! WASAPI backend.
 //!
-//! Stage 1: enumerate, describe and control the volume of output devices. Mirroring
-//! itself is not here yet — planned separately.
+//! This file enumerates, describes and controls the volume of output devices. The
+//! mirroring itself lives in `mirror.rs`, which was built on top of it afterwards.
 //!
 //! Why this order: on Linux the backend was built on top of `pactl` first and only then
 //! moved to a native binding, so that a bug was obviously in the tool and not in the
