@@ -13,6 +13,7 @@
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
 
+pub mod instance;
 pub mod state;
 
 /// Stable identifier of an output device.

@@ -45,6 +45,17 @@ pub struct PipeWireBackend {
     /// destination it ever switched off: the child is dead but its `/proc` entry stays
     /// until someone waits on it.
     children: Vec<std::process::Child>,
+    /// Last determinate answer to "where does this device apply its volume", per device.
+    ///
+    /// Both ends of the volume range say nothing (see [`volume_scope_of`]), and a slider
+    /// dragged to 0 % passes through one of them. Without a memory the interface would
+    /// swap a plain statement for "unknown" at exactly the moment the user is working the
+    /// slider — the reading turned uncertain, the device did not.
+    ///
+    /// Where the gain is applied is a property of the driver, not of the level, so
+    /// carrying the last real measurement forward is still a measurement rather than a
+    /// guess. A device that has never once been readable stays `Unknown`.
+    scopes: std::cell::RefCell<std::collections::HashMap<String, VolumeScope>>,
 }
 
 impl PipeWireBackend {
@@ -83,6 +94,7 @@ impl PipeWireBackend {
             quantum,
             rate,
             children: Vec::new(),
+            scopes: Default::default(),
         })
     }
 
@@ -90,6 +102,16 @@ impl PipeWireBackend {
     fn reap(&mut self) {
         self.children
             .retain_mut(|c| !matches!(c.try_wait(), Ok(Some(_))));
+    }
+
+    /// Keeps the last determinate scope of a device, and hands it back while the current
+    /// reading says nothing.
+    ///
+    /// Called with whatever this poll could work out. A real answer is remembered and
+    /// passed through; an `Unknown` is replaced by the last real answer for that device,
+    /// if there is one. See the field for why that is honest.
+    fn remembered_scope(&self, name: &str, fresh: VolumeScope) -> VolumeScope {
+        remember_scope(&mut self.scopes.borrow_mut(), name, fresh)
     }
 
     fn holder_name(&self, target: &DeviceId) -> String {
@@ -219,6 +241,20 @@ fn transport_of(node_name: &str, props: &serde_json::Value) -> Transport {
     Transport::Other
 }
 
+/// The remembering half of [`PipeWireBackend::remembered_scope`], free of the struct so
+/// it can be tested without a running audio server.
+fn remember_scope(
+    seen: &mut std::collections::HashMap<String, VolumeScope>,
+    name: &str,
+    fresh: VolumeScope,
+) -> VolumeScope {
+    if fresh == VolumeScope::Unknown {
+        return seen.get(name).copied().unwrap_or(VolumeScope::Unknown);
+    }
+    seen.insert(name.to_string(), fresh);
+    fresh
+}
+
 /// Decides where a device applies its volume.
 ///
 /// PipeWire reports both the requested gain (`channelVolumes`) and the part it applies
@@ -236,7 +272,13 @@ fn volume_scope_of(channel: &[f64], soft: &[f64]) -> VolumeScope {
     // Both ends of the range are degenerate: at full volume every reading is 1.0, at zero
     // every reading is 0.0. Neither says where the gain is applied, so neither may be
     // turned into a claim in the user interface.
-    if (requested - 1.0).abs() < 1e-6 || requested < 1e-3 {
+    //
+    // Only *exactly* zero counts. These numbers are linear gain while the interface shows
+    // its cube root, so the 1e-3 that used to stand here covered everything below 10 % on
+    // the slider — a tenth of the range silently answered "unknown". Anything above zero
+    // still separates the two cases cleanly: a hardware device reads 1.0 in software, a
+    // software one reads back the gain it was given, however small.
+    if (requested - 1.0).abs() < 1e-6 || requested <= 0.0 {
         return VolumeScope::Unknown;
     }
     if (in_software - 1.0).abs() < 1e-3 {
@@ -296,7 +338,7 @@ impl MirrorBackend for PipeWireBackend {
                     .unwrap_or(name)
                     .to_string(),
                 volume,
-                volume_scope: volume_scope_of(&channel, &soft),
+                volume_scope: self.remembered_scope(name, volume_scope_of(&channel, &soft)),
                 transport: transport_of(name, props),
             });
         }
@@ -525,6 +567,51 @@ mod tests {
         // A muted device reads 0.0 on both counters; claiming "software" there would
         // mislabel a hardware device that simply happens to be turned down.
         assert_eq!(volume_scope_of(&[0.0], &[0.0]), VolumeScope::Unknown);
+    }
+
+    #[test]
+    fn a_very_quiet_device_still_answers() {
+        // 7 % on the slider is 0.00034 of linear gain. That is small, not degenerate —
+        // and it used to fall under a threshold that swallowed the bottom tenth of the
+        // range.
+        assert_eq!(
+            volume_scope_of(&[0.000343], &[1.0]),
+            VolumeScope::DeviceOnly
+        );
+        assert_eq!(
+            volume_scope_of(&[0.000343], &[0.000343]),
+            VolumeScope::AffectsMirror
+        );
+    }
+
+    #[test]
+    fn a_device_dragged_to_zero_keeps_the_answer_it_gave_before() {
+        // The reading turns uncertain at both ends of the range; the device does not
+        // change where it applies its gain because someone moved a slider.
+        let mut seen = std::collections::HashMap::new();
+        assert_eq!(
+            remember_scope(&mut seen, "analog", VolumeScope::DeviceOnly),
+            VolumeScope::DeviceOnly
+        );
+        assert_eq!(
+            remember_scope(&mut seen, "analog", VolumeScope::Unknown),
+            VolumeScope::DeviceOnly,
+            "at 0 % the last real measurement has to carry"
+        );
+        // A device that was never readable stays honest about it.
+        assert_eq!(
+            remember_scope(&mut seen, "hdmi", VolumeScope::Unknown),
+            VolumeScope::Unknown
+        );
+        // And a later, different reading replaces the memory rather than being ignored.
+        assert_eq!(
+            remember_scope(&mut seen, "analog", VolumeScope::AffectsMirror),
+            VolumeScope::AffectsMirror
+        );
+        assert_eq!(
+            remember_scope(&mut seen, "analog", VolumeScope::Unknown),
+            VolumeScope::AffectsMirror
+        );
     }
 
     #[test]

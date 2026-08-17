@@ -117,6 +117,21 @@ fn fatal(message: &str) -> ! {
 }
 
 fn main() {
+    // A second press of the key combination used to stack a second window on top of the
+    // first. Nothing here raises the window that is already open — that would need a
+    // process listening in the background, which this tool deliberately does not have.
+    //
+    // An error is not a reason to refuse: a duplicate window is a nuisance, no window at
+    // all is a failure.
+    let _only_one = match mirrik_core::instance::claim("gui") {
+        Ok(None) => return,
+        Ok(Some(claim)) => Some(claim),
+        Err(e) => {
+            eprintln!("could not check for a running window, opening anyway: {e:#}");
+            None
+        }
+    };
+
     let mut b = match backend() {
         Ok(b) => b,
         Err(e) => fatal(&format!("{e:#}")),
@@ -339,7 +354,12 @@ impl<B: MirrorBackend> Window<B> {
     /// sizing for the exact current state made the list scroll as soon as anything was
     /// added. Anything beyond one extra device is caught by the scroll area.
     fn initial_height(&self) -> f32 {
-        let list = self.selectable().len() as f32;
+        // Room for four devices in the list even when fewer are plugged in. A headset or
+        // a Bluetooth speaker appearing while the window is open must not push the list
+        // into a scrollbar on the very compositors that refuse to resize it. Four is the
+        // point where the empty space is still small enough not to look like a mistake.
+        const RESERVED: f32 = 4.0;
+        let list = (self.selectable().len() as f32).max(RESERVED);
         let assumed = (self.targets.len() as f32 + 1.0).min(list);
         let sliders = 1.0 + assumed;
         // Header, source block, the two headings, footer and the four rules between them
@@ -551,6 +571,36 @@ impl<B: MirrorBackend> eframe::App for Window<B> {
         // (the window stayed at its initial 278). The request below is still sent because
         // X11 and Windows do honour it and then no scrollbar ever appears; but nothing
         // depends on it succeeding.
+        // Header and footer sit outside the scroll area, pinned to their edges: the two
+        // parts that answer "what is going on" and "how do I get out" have to be readable
+        // at every moment, whatever the list in between is doing. The footer was also the
+        // first thing to be cut off whenever the window came up shorter than its content —
+        // on Hyprland, where it cannot grow itself, that stays visible instead of being
+        // corrected on the next frame.
+        //
+        // Panels are nested outermost-first, so the header has to be added before the
+        // footer. egui 0.36 merged the four panel types into one `Panel`;
+        // `TopBottomPanel::top`/`bottom` are gone, and `show` takes a `Ui`, not a `Context`.
+        let source_name = self
+            .device(&self.source)
+            .map(|d| d.name.clone())
+            .unwrap_or_else(|| self.source.0.clone());
+        let header = egui::Panel::top("header")
+            .frame(egui::Frame::NONE)
+            .show_separator_line(false)
+            .show(ui, |ui| {
+                let p = self.palette;
+                self.header(ui, &source_name);
+                theme::rule(ui, &p);
+            });
+        let header_height = header.response.rect.height();
+
+        let footer = egui::Panel::bottom("footer")
+            .frame(egui::Frame::NONE)
+            .show_separator_line(false)
+            .show(ui, |ui| self.footer(ui));
+        let footer_height = footer.response.rect.height();
+
         let mut content = 0.0;
         let width = ui.available_width();
         egui::ScrollArea::vertical()
@@ -579,7 +629,10 @@ impl<B: MirrorBackend> eframe::App for Window<B> {
             egui::StrokeKind::Inside,
         );
 
-        let wanted = content;
+        // Header and footer are no longer part of `content`, so they have to be added back
+        // — asking for the scroll area's height alone would shrink the window by exactly
+        // the strips that were moved out of it.
+        let wanted = content + header_height + footer_height;
         if (wanted - self.height).abs() > 1.0 {
             self.height = wanted;
             ctx.send_viewport_cmd(egui::ViewportCommand::InnerSize(egui::vec2(WIDTH, wanted)));
@@ -624,8 +677,8 @@ impl<B: MirrorBackend> Window<B> {
             .map(|d| d.name.clone())
             .unwrap_or_else(|| self.source.0.clone());
 
-        self.header(ui, &source_name);
-        theme::rule(ui, &p);
+        // The header is drawn by `ui()` in its own top panel, so the body starts at the
+        // source block. Both need the name, hence the lookup in each.
         self.source_block(ui, &source_name);
         theme::rule(ui, &p);
 
@@ -654,11 +707,34 @@ impl<B: MirrorBackend> Window<B> {
         }
 
         block(14, 0).show(ui, |ui| ui.add_space(0.0));
+
+        self.reveal_focus = false;
+
+        if let Some(n) = clicked {
+            self.focus = Focus::Device(n);
+            self.toggle(n);
+        } else if reread {
+            // After releasing a fader read once more: that shows what the system really
+            // set, not what we asked for.
+            if let Err(e) = self.refresh() {
+                self.error = Some(format!("{e:#}"));
+            }
+        }
+    }
+
+    /// The keys, pinned to the bottom edge of the window.
+    ///
+    /// Two lines, because one will not hold it: mono runs a third wider than Archivo, and
+    /// "x stop all" only fitted on the line where the focus was already on a device.
+    /// Standing on a fader, the one key that stops everything was invisible. Movement on
+    /// the first line, the two ways out on the second — where they stay put.
+    ///
+    /// Drawn in its own bottom panel rather than at the end of the scrolling body: this is
+    /// the last thing that may be scrolled away or cut off, and it was the first thing to
+    /// go whenever the window came up shorter than its content.
+    fn footer(&mut self, ui: &mut egui::Ui) {
+        let p = self.palette;
         theme::rule(ui, &p);
-        // Two lines, because one will not hold it: mono runs a third wider than Archivo,
-        // and "x stop all" only fitted on the line where the focus was already on a device.
-        // Standing on a fader, the one key that stops everything was invisible. Movement on
-        // the first line, the two ways out on the second — where they stay put.
         block(11, 12).show(ui, |ui| {
             ui.spacing_mut().item_spacing.y = 3.0;
             let moving = match self.focus {
@@ -676,19 +752,6 @@ impl<B: MirrorBackend> Window<B> {
             ui.label(theme::text(moving, p.mono(10.0), p.ghost, 0.0));
             ui.label(theme::text(leaving, p.mono(10.0), p.ghost, 0.0));
         });
-
-        self.reveal_focus = false;
-
-        if let Some(n) = clicked {
-            self.focus = Focus::Device(n);
-            self.toggle(n);
-        } else if reread {
-            // After releasing a fader read once more: that shows what the system really
-            // set, not what we asked for.
-            if let Err(e) = self.refresh() {
-                self.error = Some(format!("{e:#}"));
-            }
-        }
     }
 
     /// The state, always first and always in the same place: a square, a headline, and
