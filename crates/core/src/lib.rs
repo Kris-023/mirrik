@@ -91,6 +91,20 @@ pub struct Device {
     pub volume: f32,
     pub volume_scope: VolumeScope,
     pub transport: Transport,
+    /// Whether the system currently reports this device at all.
+    ///
+    /// A backend only ever lists devices that are there, so it always sets this to `true`.
+    /// The interface uses it for the one case the backend cannot describe: a destination
+    /// that is still being mirrored to while the device itself has gone away — headphones
+    /// switched off, cable pulled. The mirror survives that and resumes by itself, so the
+    /// destination must stay visible and switchable, but nothing about it may be presented
+    /// as measured: no volume, no latency, no transport.
+    #[serde(default = "yes")]
+    pub present: bool,
+}
+
+fn yes() -> bool {
+    true
 }
 
 /// Upper bound for the volume sliders.
@@ -104,11 +118,33 @@ pub const VOLUME_MAX: f32 = 1.0;
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MirrorTarget {
     pub device: DeviceId,
+    /// Human-readable name, written down when the destination was switched on.
+    ///
+    /// A device that is currently gone — headphones switched off, cable pulled — is no
+    /// longer in the device list, so its name cannot be looked up any more. Without this,
+    /// both interfaces fell back to printing the raw node id at exactly the moment the
+    /// user most needs to recognise which device they are waiting for.
+    ///
+    /// `default` so a state file written by an older version still loads; an empty name
+    /// means "unknown", and the id is the only thing left to show.
+    #[serde(default)]
+    pub name: String,
     /// Process holding this target. When it dies, this target disappears — that is the
     /// whole trick behind "off means gone".
     pub holder_pid: u32,
     /// What cleanup searches for, so a recycled PID cannot hit the wrong process.
     pub holder_pattern: String,
+}
+
+impl MirrorTarget {
+    /// What to call this destination: its name, or the raw id if none was recorded.
+    pub fn label(&self) -> &str {
+        if self.name.is_empty() {
+            &self.device.0
+        } else {
+            &self.name
+        }
+    }
 }
 
 /// A running mirror: one source, one or more destinations.
@@ -160,6 +196,18 @@ pub trait MirrorBackend {
     fn set_volume(&mut self, device: &DeviceId, value: f32) -> Result<()>;
 
     fn status(&self) -> Result<Option<Mirror>>;
+
+    /// Brings the running mirror back in line with the devices that are actually there.
+    ///
+    /// Exists because this tool keeps nothing in the background: nobody notices a
+    /// destination coming back, so the check happens whenever an interface runs anyway —
+    /// on every command, and on every poll of the open window.
+    ///
+    /// The default does nothing, for backends where a destination cannot fall away
+    /// without ending its holder.
+    fn reconcile(&mut self) -> Result<()> {
+        Ok(())
+    }
 
     /// Clears leftovers of a crashed run.
     ///
@@ -235,6 +283,7 @@ mod tests {
             volume: 0.8,
             volume_scope: VolumeScope::DeviceOnly,
             transport: Transport::Other,
+            present: true,
         }
     }
 
@@ -256,6 +305,34 @@ mod tests {
                 false,
             ),
         ]
+    }
+
+    #[test]
+    fn a_destination_keeps_its_name_when_the_device_is_gone() {
+        let t = MirrorTarget {
+            device: DeviceId("bluez_output.00_11_22_33_44_55.1".into()),
+            name: "WH-1000XM3".into(),
+            holder_pid: 1,
+            holder_pattern: "mirrik.out.dead".into(),
+        };
+        assert_eq!(t.label(), "WH-1000XM3");
+    }
+
+    #[test]
+    fn a_state_file_from_an_older_version_still_loads() {
+        // Written before destinations recorded their name, and before devices carried a
+        // presence flag. Both have to keep working: the fallback is the raw id, and
+        // anything a backend lists is present by definition.
+        let old = r#"{"source":"analog","targets":[
+            {"device":"hdmi","holder_pid":7,"holder_pattern":"mirrik.out.abc"}]}"#;
+        let m: Mirror = serde_json::from_str(old).expect("old state file must still parse");
+        assert_eq!(m.targets[0].name, "");
+        assert_eq!(m.targets[0].label(), "hdmi");
+
+        let old_device = r#"{"id":"hdmi","name":"HDMI","is_default":false,"volume":1.0,
+            "volume_scope":"DeviceOnly","transport":"Hdmi"}"#;
+        let d: Device = serde_json::from_str(old_device).expect("old device must still parse");
+        assert!(d.present, "a device without the flag counts as present");
     }
 
     #[test]
@@ -303,6 +380,7 @@ mod tests {
             source: DeviceId("a".into()),
             targets: vec![MirrorTarget {
                 device: DeviceId("b".into()),
+                name: "B".into(),
                 holder_pid: 1,
                 holder_pattern: "x".into(),
             }],

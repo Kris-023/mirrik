@@ -241,6 +241,29 @@ fn transport_of(node_name: &str, props: &serde_json::Value) -> Transport {
     Transport::Other
 }
 
+/// Whether the playback side of a holder is actually attached to something.
+///
+/// Reads the graph rather than trusting the holder's existence: since the playback stream
+/// may not wander to another device, a destination that went away leaves the process
+/// running with nothing attached. "Holder alive" and "sound is flowing" are two different
+/// questions, and only the second one interests a listener.
+///
+/// `dump` is a parsed `pw-dump`; `node` is the playback node's name, which is also the
+/// holder pattern.
+fn is_streaming(dump: &serde_json::Value, node: &str) -> bool {
+    let objects = || dump.as_array().into_iter().flatten();
+    let Some(id) = objects()
+        .find(|o| o["info"]["props"]["node.name"].as_str() == Some(node))
+        .and_then(|o| o["id"].as_u64())
+    else {
+        return false;
+    };
+    objects().any(|o| {
+        o["type"].as_str() == Some("PipeWire:Interface:Link")
+            && o["info"]["output-node-id"].as_u64() == Some(id)
+    })
+}
+
 /// The remembering half of [`PipeWireBackend::remembered_scope`], free of the struct so
 /// it can be tested without a running audio server.
 fn remember_scope(
@@ -340,6 +363,8 @@ impl MirrorBackend for PipeWireBackend {
                 volume,
                 volume_scope: self.remembered_scope(name, volume_scope_of(&channel, &soft)),
                 transport: transport_of(name, props),
+                // Listed means present; the interface adds the absent ones itself.
+                present: true,
             });
         }
 
@@ -358,9 +383,13 @@ impl MirrorBackend for PipeWireBackend {
 
     fn add_target(&mut self, target: &DeviceId) -> Result<()> {
         let devices = self.devices()?;
-        if !devices.iter().any(|d| d.id == *target) {
+        let Some(chosen) = devices.iter().find(|d| d.id == *target) else {
             bail!("target device {target} does not exist (any more)");
-        }
+        };
+        // Remembered now, while the device is still here to be asked. Once it is gone its
+        // name is gone with it, and "waiting for bluez_output.00_11_22_33_44_55.1" helps
+        // nobody.
+        let name = chosen.name.clone();
 
         let source = self.default_device()?;
         if source.id == *target {
@@ -386,12 +415,18 @@ impl MirrorBackend for PipeWireBackend {
 
         let node = self.holder_name(target);
 
-        // Two properties decide between working and silence here, both paid for with a
-        // failed attempt:
-        //   target.object — NOT node.target (superseded in PipeWire 0.3.64; combined with
-        //                   node.dont-reconnect the stream silently never connects)
-        //   node.passive  — capture side only. On the playback side it stops a suspended
-        //                   target device from ever waking up, so no sound at all.
+        // Three properties decide between working, silence and howling here, each paid for
+        // with a failed attempt:
+        //   target.object       — NOT node.target (superseded in PipeWire 0.3.64).
+        //   node.passive        — capture side only. On the playback side it stops a
+        //                         suspended target device from ever waking up: no sound.
+        //   node.dont-reconnect — playback side. Without it, a destination that goes away
+        //                         does not end the stream: PipeWire moves it to the
+        //                         current default sink, which here is the *source*. The
+        //                         monitor of the analog output then plays back into the
+        //                         analog output — a feedback loop. Measured on 2026-08-17
+        //                         after a suspend, audible as a loud buzz, with `pw-link`
+        //                         showing `mirrik.out.…:output_FL -> analog:playback_FL`.
         // No media.class on either side: that keeps both ends streams, so no sink appears.
         let args = format!(
             r#"{{
@@ -404,6 +439,7 @@ impl MirrorBackend for PipeWireBackend {
     }}
     playback.props = {{
         target.object = "{target}"
+        node.dont-reconnect = true
         node.name     = {node}
     }}
 }}"#,
@@ -435,6 +471,7 @@ impl MirrorBackend for PipeWireBackend {
 
         mirror.targets.push(MirrorTarget {
             device: target.clone(),
+            name,
             holder_pid: pid,
             holder_pattern: node,
         });
@@ -502,6 +539,32 @@ impl MirrorBackend for PipeWireBackend {
             state::save(&mirror)?;
         }
         Ok(Some(mirror))
+    }
+
+    fn reconcile(&mut self) -> Result<()> {
+        let Some(mirror) = self.status()? else {
+            return Ok(());
+        };
+        let present: Vec<DeviceId> = self.devices()?.into_iter().map(|d| d.id).collect();
+        let dump: serde_json::Value = serde_json::from_str(&run("pw-dump", &[])?)
+            .context("pw-dump did not return valid JSON")?;
+
+        for t in mirror.targets {
+            // Device still away: nothing to do. The loopback sits idle and silent, which
+            // is the whole point of `node.dont-reconnect`.
+            if !present.contains(&t.device) {
+                continue;
+            }
+            if is_streaming(&dump, &t.holder_pattern) {
+                continue;
+            }
+            // Device is back but the stream stayed behind — a loopback that was cut off
+            // never re-attaches by itself once it may not wander. Rebuilt here rather than
+            // left as a mirror that claims to run and plays nothing.
+            self.remove_target(&t.device)?;
+            self.add_target(&t.device)?;
+        }
+        Ok(())
     }
 
     fn cleanup_stale(&mut self) -> Result<()> {

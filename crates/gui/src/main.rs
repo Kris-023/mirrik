@@ -236,13 +236,35 @@ impl<B: MirrorBackend> Window<B> {
     }
 
     fn refresh(&mut self) -> anyhow::Result<()> {
+        // A destination that came back while the window was open is picked up here — this
+        // poll is the only thing running, so it is the only place that can notice.
+        self.backend.reconcile()?;
         self.devices = self.backend.devices()?;
         self.source = self.backend.default_device()?.id;
-        self.targets = self
-            .backend
-            .status()?
-            .map(|m| m.targets.into_iter().map(|t| t.device).collect())
-            .unwrap_or_default();
+        let running = self.backend.status()?.map(|m| m.targets).unwrap_or_default();
+
+        // A destination whose device has gone away — headphones switched off, cable
+        // pulled — is missing from the device list, and used to vanish from the window
+        // with it: not in the list, so not switchable, and the only way out was `x` or the
+        // command line. It is carried here as a device of its own, marked absent, using
+        // the name written down when it was switched on.
+        for t in &running {
+            if !self.devices.iter().any(|d| d.id == t.device) {
+                self.devices.push(Device {
+                    id: t.device.clone(),
+                    name: t.label().to_string(),
+                    is_default: false,
+                    // Nothing here was measured, and nothing here is shown: `present`
+                    // keeps every reading of this device out of the interface.
+                    volume: 0.0,
+                    volume_scope: VolumeScope::Unknown,
+                    transport: Transport::Other,
+                    present: false,
+                });
+            }
+        }
+
+        self.targets = running.into_iter().map(|t| t.device).collect();
         self.last_poll = Instant::now();
         let chain = self.focus_chain();
         if !chain.contains(&self.focus) {
@@ -267,9 +289,21 @@ impl<B: MirrorBackend> Window<B> {
         !self.targets.is_empty()
     }
 
+    /// Destinations that can carry a fader: the ones whose device is actually there.
+    ///
+    /// An absent destination has no level to read and none to set, so it gets no slider —
+    /// but it keeps its row in the list below, where it can be switched off.
+    fn faders(&self) -> Vec<DeviceId> {
+        self.targets
+            .iter()
+            .filter(|id| self.device(id).is_some_and(|d| d.present))
+            .cloned()
+            .collect()
+    }
+
     fn focus_chain(&self) -> Vec<Focus> {
         let mut c = vec![Focus::Source];
-        c.extend((0..self.targets.len()).map(Focus::Target));
+        c.extend((0..self.faders().len()).map(Focus::Target));
         c.extend((0..self.selectable().len()).map(Focus::Device));
         c
     }
@@ -285,7 +319,7 @@ impl<B: MirrorBackend> Window<B> {
     fn focused_device(&self) -> Option<DeviceId> {
         match self.focus {
             Focus::Source => Some(self.source.clone()),
-            Focus::Target(i) => self.targets.get(i).cloned(),
+            Focus::Target(i) => self.faders().get(i).cloned(),
             Focus::Device(_) => None,
         }
     }
@@ -689,7 +723,7 @@ impl<B: MirrorBackend> Window<B> {
             ui.add_space(12.0);
             let source = self.source.clone();
             reread = self.fader(ui, &source, self.focus == Focus::Source, true);
-            for (i, id) in self.targets.clone().iter().enumerate() {
+            for (i, id) in self.faders().iter().enumerate() {
                 ui.add_space(14.0);
                 reread |= self.fader(ui, id, self.focus == Focus::Target(i), false);
             }
@@ -770,10 +804,13 @@ impl<B: MirrorBackend> Window<B> {
         let sub = if mirroring {
             self.targets
                 .iter()
-                .map(|id| {
-                    self.device(id)
-                        .map(|d| d.name.clone())
-                        .unwrap_or_else(|| id.0.clone())
+                .map(|id| match self.device(id) {
+                    // Absent destinations are named too, with what they are doing —
+                    // otherwise the headline says "Mirroring" while nothing is audible
+                    // anywhere and the line underneath gives no hint why.
+                    Some(d) if !d.present => format!("{} (waiting)", d.name),
+                    Some(d) => d.name.clone(),
+                    None => id.0.clone(),
                 })
                 .collect::<Vec<_>>()
                 .join("  ·  ")
@@ -840,11 +877,21 @@ impl<B: MirrorBackend> Window<B> {
     /// The device list. Returns the entry that was clicked, if any.
     fn destinations(&mut self, ui: &mut egui::Ui) -> Option<usize> {
         let p = self.palette;
-        let counter = format!(
-            "{} / {} active",
-            self.targets.len(),
-            self.selectable().len()
-        );
+        // Absent destinations are counted apart. "1 / 1 active" over a list in which the
+        // only entry sits on OFF was the plainest contradiction the window ever showed.
+        let waiting = self.targets.len() - self.faders().len();
+        let counter = if waiting > 0 {
+            format!(
+                "{} active · {waiting} waiting",
+                self.faders().len()
+            )
+        } else {
+            format!(
+                "{} / {} active",
+                self.targets.len(),
+                self.selectable().len()
+            )
+        };
         block(14, 0).show(ui, |ui| {
             ui.horizontal(|ui| {
                 theme::kicker(ui, &p, "Destinations");
@@ -876,14 +923,24 @@ impl<B: MirrorBackend> Window<B> {
                         .backend
                         .target_latency_ms(d)
                         .unwrap_or(base_latency);
-                    let mut meta = if on {
+                    // Nothing may be reported about a device that is not there: no
+                    // latency, no level, no transport. It says what it is waiting for,
+                    // and stays switchable — that is the whole point of keeping the row.
+                    // Says what actually happens, not what would be nice. Nothing of this
+                    // tool runs in the background, so a returning device is noticed by
+                    // whoever is running at the time: this window while it is open, or
+                    // the next command. Verified the hard way — the mirror stayed down
+                    // after the headphones came back on, until the window was reopened.
+                    let mut meta = if !d.present {
+                        "device away · resumes when Mirrik runs again".to_string()
+                    } else if on {
                         format!("~{latency} ms · {:.0} %", d.volume * 100.0)
                     } else {
                         "idle".to_string()
                     };
                     // Bluetooth is the one transport that adds delay worth warning about,
                     // and it is invisible in the device name.
-                    if d.transport == Transport::Bluetooth {
+                    if d.present && d.transport == Transport::Bluetooth {
                         meta.push_str(" · Bluetooth");
                     }
                     let response = theme::device_row(

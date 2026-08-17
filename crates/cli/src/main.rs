@@ -197,6 +197,8 @@ fn main() -> Result<()> {
     // Safety net before every command: clear leftovers of a crashed run instead of
     // stacking a second mirror next to the first.
     b.cleanup_stale()?;
+    // And pick up destinations that came back while nothing was running.
+    b.reconcile()?;
 
     match cli.command {
         Command::Devices { json } => {
@@ -239,8 +241,26 @@ fn main() -> Result<()> {
         }
 
         Command::Remove { target, json } => {
+            // A destination whose device is gone cannot be looked up in the device list —
+            // and that is precisely when someone wants to remove it. The running mirror
+            // knows it by id and by the name written down when it was switched on, so ask
+            // there before giving up.
             let devices = b.devices()?;
-            let id = find_device(&devices, &target)?.id.clone();
+            let id = match find_device(&devices, &target) {
+                Ok(d) => d.id.clone(),
+                Err(e) => {
+                    let needle = target.to_lowercase();
+                    b.status()?
+                        .into_iter()
+                        .flat_map(|m| m.targets)
+                        .find(|t| {
+                            t.device.0.to_lowercase().contains(&needle)
+                                || t.label().to_lowercase().contains(&needle)
+                        })
+                        .map(|t| t.device)
+                        .ok_or(e)?
+                }
+            };
             b.remove_target(&id)?;
             report(&mut b, json)?;
         }
@@ -333,11 +353,19 @@ fn report(b: &mut impl MirrorBackend, json: bool) -> Result<()> {
                 .iter()
                 .map(|t| {
                     let d = devices.iter().find(|d| d.id == t.device);
-                    let latency = d.map(|d| b.target_latency_ms(d)).transpose()?.unwrap_or(0);
+                    // A destination that is not in the device list right now is not gone
+                    // for good: the holder survives, and the mirror picks up again by
+                    // itself when the device comes back. What must not happen is claiming
+                    // a latency for a device nobody can measure — that used to print
+                    // "~0 ms" for the very Bluetooth headphones that add 200.
+                    let latency = d.map(|d| b.target_latency_ms(d)).transpose()?;
                     Ok(serde_json::json!({
                         "id": t.device.0,
-                        "name": name(&t.device),
-                        "transport": d.map(|d| d.transport.label()).unwrap_or("other"),
+                        // The name written down when it was switched on, so an absent
+                        // device is still recognisable.
+                        "name": d.map(|d| d.name.clone()).unwrap_or_else(|| t.label().to_string()),
+                        "present": d.is_some(),
+                        "transport": d.map(|d| d.transport.label()),
                         "latency_ms": latency,
                         "holder_pid": t.holder_pid,
                     }))
@@ -356,11 +384,14 @@ fn report(b: &mut impl MirrorBackend, json: bool) -> Result<()> {
             } else {
                 println!("Mirroring from: {}", name(&m.source));
                 for t in &targets {
-                    let ms = t["latency_ms"].as_u64().unwrap_or(0);
-                    println!(
-                        "  -> {}  (~{ms} ms behind)",
-                        t["name"].as_str().unwrap_or("")
-                    );
+                    let label = t["name"].as_str().unwrap_or("");
+                    match t["latency_ms"].as_u64() {
+                        Some(ms) => println!("  -> {label}  (~{ms} ms behind)"),
+                        // Device currently away. Saying "waiting" rather than printing a
+                        // number nobody measured, and rather than dropping the line, which
+                        // would suggest the destination had been forgotten.
+                        None => println!("  -> {label}  (waiting for the device)"),
+                    }
                     if t["transport"].as_str() == Some(Transport::Bluetooth.label()) {
                         println!("     note: Bluetooth adds buffering; the offset is an estimate");
                     }

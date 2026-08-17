@@ -119,6 +119,8 @@ impl WasapiBackend {
             // (chip or software) changes nothing about that ordering.
             volume_scope: VolumeScope::DeviceOnly,
             transport: transport_of(d),
+            // Listed means present; the interface adds the absent ones itself.
+            present: true,
         })
     }
 
@@ -300,6 +302,16 @@ impl MirrorBackend for WasapiBackend {
         // Fail before spawning anything if the device is gone.
         self.find(target)?;
 
+        // Written down while the device is still here to be asked: once it is unplugged it
+        // drops out of the device list, and an interface that can only show the raw id
+        // leaves the user guessing which destination is missing.
+        let name = self
+            .devices()?
+            .into_iter()
+            .find(|d| d.id == *target)
+            .map(|d| d.name)
+            .unwrap_or_default();
+
         let source = DeviceId(self.default_id()?);
         if *target == source {
             bail!("that device is already the output everything plays to");
@@ -360,6 +372,7 @@ impl MirrorBackend for WasapiBackend {
 
         m.targets.push(MirrorTarget {
             device: target.clone(),
+            name,
             holder_pid: child.id(),
             holder_pattern: image,
         });
