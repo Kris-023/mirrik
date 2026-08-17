@@ -16,11 +16,15 @@ mirrik-core.workspace = true
 # glow rather than wgpu: the window has to be there the moment the key is pressed, not
 # after a graphics stack has started. `default-features = false` drops the persistence
 # feature among others, which would have nothing here to save.
+# No `default_fonts`: theme.rs builds the font set from FontDefinitions::empty() and ships
+# Archivo and JetBrains Mono itself, so egui's built-in faces were never reachable - they
+# only sat in the binary, 1.4 MB of them, under two further licences (Ubuntu Font Licence
+# for Ubuntu-Light, OFL for NotoEmoji). Leaving them out keeps the licence list to the two
+# fonts actually used.
 eframe = { version = "0.36", default-features = false, features = [
     "glow",
     "wayland",
     "x11",
-    "default_fonts",
 ] }
 
 [target.'cfg(target_os = "linux")'.dependencies]
