@@ -46,14 +46,33 @@ fi
 exit 0
 EOF
     printf '#!/usr/bin/env bash\nexit 0\n' > "$d/mirrik-gui"
-    for t in gsettings xfconf-query; do
-        [[ "$missing" == *" $t "* ]] && continue
-        cat > "$d/$t" <<EOF
+    # gsettings muss mehr koennen als mitschreiben: die GNOME- und Cinnamon-Zweige
+    # fragen erst `list-schemas` und weichen ohne Treffer auf "machen Sie es von Hand"
+    # aus. Eine stumme Attrappe laesst diese Zweige also nie laufen - und einen Test,
+    # der den Ausweichpfad fuer Erfolg haelt, gruen aussehen.
+    if [[ "$missing" != *" gsettings "* ]]; then
+        cat > "$d/gsettings" <<'EOF'
 #!/usr/bin/env bash
-printf '%s %s\n' "\$(basename "\$0")" "\$*" >> "\$STUB_LOG"
+printf 'gsettings %s
+' "$*" >> "$STUB_LOG"
+case "${1:-}" in
+    list-schemas)
+        printf '%s
+' org.gnome.settings-daemon.plugins.media-keys                       org.cinnamon.desktop.keybindings ;;
+    get) printf "@as []
+" ;;
+esac
 exit 0
 EOF
-    done
+    fi
+    if [[ "$missing" != *" xfconf-query "* ]]; then
+        cat > "$d/xfconf-query" <<'EOF'
+#!/usr/bin/env bash
+printf 'xfconf-query %s
+' "$*" >> "$STUB_LOG"
+exit 0
+EOF
+    fi
     if [[ "$missing" != *" cargo "* ]]; then
         cat > "$d/cargo" <<'EOF'
 #!/usr/bin/env bash
@@ -176,6 +195,15 @@ check_xfconf() {
     grep -q xfconf-query "$STUBLOG" 2>/dev/null || echo "xfconf-query wurde nicht aufgerufen"
 }
 check_manual_hint() { installed_ok; has_desktop; }
+check_tool_called() {   # GNOME/Cinnamon/XFCE setzen das Kuerzel ueber ein Werkzeug
+    installed_ok; has_desktop
+    # Nicht "wurde aufgerufen", sondern "hat etwas gesetzt, das auf uns zeigt": ein
+    # blosses list-schemas ist der Ausweichpfad, kein Erfolg.
+    grep -q 'mirrik-gui' "$STUBLOG" 2>/dev/null \
+        || echo "kein Aufruf, der mirrik-gui setzt (nur Abfragen?)"
+    grep -qE 'gsettings set|xfconf-query .*-s ' "$STUBLOG" 2>/dev/null \
+        || echo "kein schreibender Aufruf (set) im Protokoll"
+}
 check_abort() {
     [ "$RC" = 0 ] && echo "Exit-Code 0, obwohl Abbruch erwartet war"
     [ -e "$HOME_UNDER_TEST/.local/bin/mirrik" ] && echo "trotz Abbruch installiert"
@@ -232,6 +260,11 @@ check_space_declined() { # Warnung abgelehnt: Rueckfall auf ~/.local/bin
     canary_clean
     grep -q 'contains a space' <<<"$OUT" || echo "keine Warnung zum Leerzeichen"
     [ -x "$HOME_UNDER_TEST/.local/bin/mirrik" ] || echo "kein Rueckfall auf ~/.local/bin"
+}
+check_reasked() {   # ungueltige Auswahl: Hinweis, erneute Frage, dann der richtige Zweig
+    canary_clean
+    grep -q 'Not one of the choices' <<<"$OUT" || echo "keine erneute Frage nach ungueltiger Eingabe"
+    check_appended
 }
 check_eof() {   # stdin endet mitten in den Fragen
     canary_clean
@@ -290,15 +323,26 @@ CASES=(
   "leerzeichen-angenommen|/tmp/mirrik test bin,y,y,y,1,2,a,1,y|check_space_warned|cfg=.config/hypr/hyprland.conf"
   "leerzeichen-abgelehnt|/tmp/mirrik test bin,n,y,1,2,a,1,y|check_space_declined|cfg=.config/hypr/hyprland.conf"
   # --- Unsinn statt Auswahl
-  "wm-zahl-zu-gross|,y,99,2,a|check_survives_nonsense|cfg=.config/hypr/hyprland.conf"
-  "wm-buchstaben|,y,abc,2,a|check_survives_nonsense|cfg=.config/hypr/hyprland.conf"
-  "mods-unsinn|,y,1,9,a,2|check_survives_nonsense|cfg=.config/hypr/hyprland.conf"
+  "wm-zahl-zu-gross-dann-gueltig|,y,99,1,2,a,1,y|check_reasked|cfg=.config/hypr/hyprland.conf"
+  "wm-buchstaben-dann-gueltig|,y,abc,1,2,a,1,y|check_reasked|cfg=.config/hypr/hyprland.conf"
+  "mods-unsinn-dann-gueltig|,y,1,9,2,a,1,y|check_reasked|cfg=.config/hypr/hyprland.conf"
+  "kind-unsinn-dann-gueltig|,y,1,2,a,7,1,y|check_reasked|cfg=.config/hypr/hyprland.conf"
   "taste-mehrzeichig-dann-gueltig|,y,1,2,abc,a,1,y|check_appended|cfg=.config/hypr/hyprland.conf"
   "taste-sonderzeichen-dann-gueltig|,y,1,2,%,q,1,y|check_appended|cfg=.config/hypr/hyprland.conf"
   # --- stdin endet vorzeitig
   "eof-sofort||check_eof|cfg=.config/hypr/hyprland.conf"
   "eof-nach-drei|,y,1|check_eof|cfg=.config/hypr/hyprland.conf"
 )
+
+# Die erzeugte Vollmatrix wird mitgeladen, wenn sie daneben liegt. So bleiben die
+# handgeschriebenen Sonderfaelle oben und die Vollzaehlung kommt dazu.
+if [ -f "$REPO/tools/matrix-cases.txt" ] && [ -z "${NO_MATRIX:-}" ]; then
+    while IFS= read -r line; do
+        [ -z "$line" ] && continue
+        case "$line" in \#*) continue ;; esac
+        CASES+=("$line")
+    done < "$REPO/tools/matrix-cases.txt"
+fi
 
 filter="${1:-}"
 echo "install.sh — Pruefstand"

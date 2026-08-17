@@ -53,6 +53,23 @@ confirm() {  # confirm <question> [y|n]  -> exit status
 
 have() { command -v "$1" >/dev/null 2>&1; }
 
+# Auswahl aus einer festen Liste. Anything else is asked again - a wrong number must not
+# quietly become something the user did not pick. Empty input takes the default, which is
+# what Enter is for, and what an ended stdin falls back to.
+choose() {  # choose <question> <default> <allowed...>
+    local question="$1" default="$2"; shift 2
+    local answer allowed=("$@") v
+    while true; do
+        answer="$(ask "$question" "$default")"
+        for v in "${allowed[@]}"; do
+            [ "$answer" = "$v" ] && { printf '%s' "$answer"; return 0; }
+        done
+        # Auf stderr: choose laeuft in einer Kommandosubstitution, alles auf stdout
+        # waere Teil des Rueckgabewerts statt eine Meldung an den Leser.
+        dim "  Not one of the choices. Pick from: ${allowed[*]}" >&2
+    done
+}
+
 # Appends a block to a config file, but only once. The markers are there so both this
 # script and a human can find it again.
 #
@@ -402,7 +419,7 @@ say '     4) niri               11) XFCE'
 say '     5) river              12) Something else'
 say '     6) awesome            13) Skip this step'
 say '     7) bspwm / sxhkd'
-wm="$(ask '  Choice' "$guess")"
+wm="$(choose '  Choice' "$guess" 1 2 3 4 5 6 7 8 9 10 11 12 13)"
 
 if [ "$wm" = 13 ]; then
     dim '  Skipped. The command to bind, whenever you get to it, is:'
@@ -412,7 +429,7 @@ else
     say '  Which modifiers?'
     say '    1) Super            3) Alt'
     say '    2) Super + Shift    4) Ctrl + Alt'
-    mods="$(ask '  Choice' '2')"
+    mods="$(choose '  Choice' '2' 1 2 3 4)"
 
     key=''
     while [ -z "$key" ]; do
@@ -705,7 +722,7 @@ $MARK_CLOSE"
         dim '       (the right answer if the file is generated for you by Nix, Home'
         dim '        Manager or chezmoi, is split across includes, or is not conf syntax:'
         dim '        anything this script appends would be lost or ignored)'
-        kind="$(ask '  Choice' "$default_choice")"
+        kind="$(choose '  Choice' "$default_choice" 1 2)"
 
         if [ "$kind" = 1 ]; then
             if [ "$wm" = 4 ]; then
