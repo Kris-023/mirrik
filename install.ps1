@@ -352,12 +352,15 @@ if (-not $source) {
         Say '  the first time and needs an internet connection for the dependencies.' DarkGray
         if (-not (Confirm '  Build them now?')) {
             Say '  Nothing was changed. Build them yourself with:' DarkGray
-            Say '    cargo build --release --manifest-path Cargo.toml' Gray
+            Say '    cargo build --release -p mirrik-cli -p mirrik-gui' Gray
             exit 1
         }
         Push-Location $root
         try {
-            cargo build --release --manifest-path 'Cargo.toml'
+            # -p even though the workspace's default-members already exclude the other
+            # platform's backend: this way the build does not silently depend on a setting
+            # in a file the installer never reads. The Linux script says the same thing.
+            cargo build --release --manifest-path 'Cargo.toml' -p mirrik-cli -p mirrik-gui
             if ($LASTEXITCODE -ne 0) { throw "cargo build failed with exit code $LASTEXITCODE" }
         } finally {
             Pop-Location
@@ -394,13 +397,39 @@ Say '  until you clear it out, and the shortcut breaks with it.' DarkGray
 Say ''
 
 $default = Join-Path $env:LOCALAPPDATA 'Programs\Mirrik'
-$target = Ask '  Install to' $default
 
-New-Item -ItemType Directory -Force -Path $target | Out-Null
+# Ask until the answer is a path Windows can actually take. A wrong character here does
+# not fail at the prompt, it fails several steps later inside New-Item, where the error
+# text talks about the cmdlet rather than about the typo.
+$target = $null
+while (-not $target) {
+    $typed = Ask '  Install to' $default
+    if ([string]::IsNullOrWhiteSpace($typed)) { $typed = $default }
+    if ($typed -match '[<>"|?*]') {
+        Say '  Windows does not allow < > " | ? or * in a path.' Yellow
+        continue
+    }
+    try {
+        New-Item -ItemType Directory -Force -Path $typed -ErrorAction Stop | Out-Null
+        $target = $typed
+    } catch {
+        Say "  That folder cannot be created: $($_.Exception.Message)" Yellow
+        Say '  A path under your own user folder needs no special rights.' DarkGray
+    }
+}
 
 # A running holder process would hold its own .exe open and the copy would fail halfway.
 $existingCli = Join-Path $target 'mirrik.exe'
 if (Test-Path $existingCli) {
+    # Say which version is being replaced. Without this the script silently overwrites an
+    # installation the user may not remember making - the Linux side had the same gap.
+    $installedVersion = $null
+    try { $installedVersion = (& $existingCli --version 2>$null | Select-Object -First 1) } catch { }
+    if ($installedVersion) {
+        Say "  Replacing what is already there: $installedVersion" DarkGray
+    } else {
+        Say '  There is already a mirrik.exe in that folder; it will be replaced.' DarkGray
+    }
     & $existingCli off 2>&1 | Out-Null
     Get-Process -Name 'mirrik', 'mirrik-gui' -ErrorAction SilentlyContinue |
         Where-Object { $_.Path -and (Split-Path $_.Path -Parent) -eq $target } |

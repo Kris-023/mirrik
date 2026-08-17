@@ -124,7 +124,7 @@ run_case() {  # <name> <antworten> <pruef-funktion> [opts]
     local name="$1" answers="$2" check="$3" opts="${4:-}"
     local cfg='' pre='empty' server='PulseAudio (on PipeWire 1.6.8)'
     local missing='' lua='' nobins='' nopath='' repeat=1 pair kv
-    local osrelease='' shell_for_case='' hyprversion=''
+    local osrelease='' shell_for_case='' hyprversion='' preinstalled=''
     IFS=';' read -ra kv <<<"$opts"
     for pair in "${kv[@]}"; do
         [ -z "$pair" ] && continue
@@ -133,7 +133,7 @@ run_case() {  # <name> <antworten> <pruef-funktion> [opts]
             server) server="${pair#*=}" ;; missing) missing="${pair#*=}" ;;
             lua) lua=1 ;; nobins) nobins=1 ;; nopath) nopath=1 ;; repeat) repeat="${pair#*=}" ;;
             osrelease) osrelease="${pair#*=}" ;; shell) shell_for_case="${pair#*=}" ;;
-            hyprversion) hyprversion="${pair#*=}" ;;
+            hyprversion) hyprversion="${pair#*=}" ;; preinstalled) preinstalled="${pair#*=}" ;;
         esac
     done
 
@@ -153,6 +153,17 @@ run_case() {  # <name> <antworten> <pruef-funktion> [opts]
     [ -n "$lua" ] && { mkdir -p "$home/.config/hypr/subcfgs"; printf -- '-- binds\n' > "$home/.config/hypr/subcfgs/binds.lua"; }
     [ -n "$osrelease" ] && printf 'ID=%s\nPRETTY_NAME="%s test"\n' "$osrelease" "$osrelease" > "$home/os-release"
     [ -z "$nobins" ] && cp "$stubs/mirrik" "$stubs/mirrik-gui" "$REPO/" 2>/dev/null
+    # Eine "bereits installierte" Fassung, die meldet, was mit ihr geschieht.
+    if [ -n "$preinstalled" ]; then
+        cat > "$home/.local/bin/mirrik" <<EOF
+#!/usr/bin/env bash
+printf 'old-mirrik %s\n' "\$*" >> "\$STUB_LOG"
+[ "\${1:-}" = --version ] && printf 'mirrik %s\n' "$preinstalled"
+exit 0
+EOF
+        cp "$home/.local/bin/mirrik" "$home/.local/bin/mirrik-gui"
+        chmod +x "$home/.local/bin/mirrik" "$home/.local/bin/mirrik-gui"
+    fi
 
     local sysbin="$home/sysbin"
     make_minimal_path "$sysbin"
@@ -345,6 +356,13 @@ check_rule_neu(){
     return 0
 }
 check_rule_angenommen() { installed_ok; grep -q 'hyprctl was not found' <<<"$OUT" || echo "kein Hinweis, dass die Version geraten wurde"; }
+check_replaces_old() {   # vorhandene Fassung: gemeldet und vorher abgeschaltet
+    installed_ok; has_desktop
+    grep -q 'Replacing what is already installed: mirrik 0.0.9' <<<"$OUT" \
+        || echo "die vorhandene Fassung wurde nicht mit ihrer Version genannt"
+    grep -q 'old-mirrik off' "$STUBLOG" 2>/dev/null \
+        || echo "die laufende Spiegelung wurde nicht abgeschaltet"
+}
 check_eof() {   # stdin endet mitten in den Fragen
     canary_clean
     grep -qi 'unbound variable\|syntax error' <<<"$OUT" && echo "Shell-Fehler bei EOF"
@@ -359,6 +377,7 @@ a() {  # <desktop:y|n> <wm> <mods> <key> [weitere Antworten...]
 
 CASES=(
   "hyprland-append|$(a y 1 2 a 1 y)|check_appended|cfg=.config/hypr/hyprland.conf"
+  "ueber-alte-fassung|$(a y 1 2 a 1 y)|check_replaces_old|cfg=.config/hypr/hyprland.conf;preinstalled=0.0.9"
   "sway-append|$(a y 2 2 a 1 y)|check_appended|cfg=.config/sway/config"
   "i3-append|$(a y 3 2 a 1 y)|check_appended|cfg=.config/i3/config"
   "river-append|$(a y 5 2 a 1 y)|check_appended|cfg=.config/river/init"

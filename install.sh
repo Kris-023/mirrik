@@ -369,6 +369,22 @@ case "$bindir" in
         confirm '  Use it anyway?' n || bindir="$HOME/.local/bin"
         ;;
 esac
+# What is already there belongs to the version that is already there: its holder
+# processes carry that version's node names and are matched by its pattern. Install over
+# a running mirror and the new binary cannot recognise the old holders any more - which
+# is exactly what happened when the tool was renamed. So say what is being replaced, and
+# switch it off first. Borrowed from install.ps1, which has done this from the start
+# because Windows refuses to overwrite a running .exe at all.
+if [ -x "$bindir/mirrik" ]; then
+    old_version="$("$bindir/mirrik" --version 2>/dev/null | head -n1 || true)"
+    if [ -n "$old_version" ]; then
+        dim "  Replacing what is already installed: $old_version"
+    else
+        dim '  There is already a mirrik in that directory; it will be replaced.'
+    fi
+    "$bindir/mirrik" off >/dev/null 2>&1 || true
+fi
+
 install -Dm755 "$source_dir/mirrik"     "$bindir/mirrik"
 install -Dm755 "$source_dir/mirrik-gui" "$bindir/mirrik-gui"
 ok "  Installed into $bindir"
