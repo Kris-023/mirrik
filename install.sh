@@ -653,10 +653,37 @@ $MARK_CLOSE"
         say ''
         [ -n "$note" ] && { dim "  $note"; say ''; }
 
-        dim '  How do you keep that config file?'
-        say '    1) I edit it by hand'
-        say '    2) It is generated for me (Nix, Home Manager, chezmoi, a templater, ...)'
-        kind="$(ask '  Choice' '1')"
+        # The question used to ask how the file is maintained ("by hand" vs "generated"),
+        # which reads as "who types this in, you or me?" - the opposite of what it decides.
+        # Ask about the action instead, and let the reasons live in the options.
+        default_choice=1
+        if [ ! -f "$config" ]; then
+            warn "  $config does not exist."
+            dim '  Either your configuration lives somewhere else, or it is in another'
+            dim '  format. Appending would create a file your setup never reads.'
+            say ''
+            default_choice=2
+        elif [ "$wm" = 1 ] && { compgen -G "$conf_home/hypr/*.lua" >/dev/null 2>&1 ||
+                        compgen -G "$conf_home/hypr/*/*.lua" >/dev/null 2>&1; }; then
+            # Hyprland can be driven from Lua by several community setups. The lines above
+            # are conf syntax and will not work there as they stand.
+            warn '  Lua files found next to your Hyprland config.'
+            dim '  If your binds live in Lua, the lines above are the wrong syntax - they'
+            dim '  have to be translated. With the common hl.* API that is roughly:'
+            say ''
+            say "    hl.bind(\"${hypr// / + } + $upper\", hl.dsp.exec_cmd(\"$gui\"))"
+            say "    hl.window_rule({ match = { class = \"^mirrik\$\" }, float = true, center = true })"
+            say ''
+            default_choice=2
+        fi
+
+        dim '  What should happen with them?'
+        say "    1) Append them to $config"
+        say '    2) Nothing - print them and let me place them myself'
+        dim '       (the right answer if the file is generated for you by Nix, Home'
+        dim '        Manager or chezmoi, is split across includes, or is not conf syntax:'
+        dim '        anything this script appends would be lost or ignored)'
+        kind="$(ask '  Choice' "$default_choice")"
 
         if [ "$kind" = 1 ]; then
             if [ "$wm" = 4 ]; then
@@ -667,9 +694,7 @@ $MARK_CLOSE"
                     "Appended. Reload your compositor and $human+$upper opens the window."
             fi
         else
-            dim '  Then this script will not touch it - a generated file would overwrite'
-            dim '  whatever it appended on the next rebuild. Put the lines above into'
-            dim '  whatever generates it.'
+            dim '  Nothing written. The lines are above whenever you want them.'
         fi
     fi
 fi
