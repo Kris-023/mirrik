@@ -132,12 +132,14 @@ EOF
 }
 
 # opts: cfg= pre=none|empty|marker server= missing=a,b lua=1 nobins=1 nopath=1 repeat=N
-#       hyprversion= preinstalled= cargoversion=
+#       hyprversion= preinstalled= cargoversion= stateonly=1 statedecoy=1 statepartial=1
+#       statenoexec=1 statefileunreadable=1
 run_case() {  # <name> <answers> <check-function> [opts]
     local name="$1" answers="$2" check="$3" opts="${4:-}"
     local cfg='' pre='empty' server='PulseAudio (on PipeWire 1.6.8)'
     local missing='' lua='' nobins='' nopath='' repeat=1 pair kv
-    local osrelease='' shell_for_case='' hyprversion='' preinstalled='' cargoversion=''
+    local osrelease='' shell_for_case='' hyprversion='' preinstalled='' cargoversion='' stateonly=''
+    local statedecoy='' statepartial='' statenoexec='' statefileunreadable=''
     IFS=';' read -ra kv <<<"$opts"
     for pair in "${kv[@]}"; do
         [ -z "$pair" ] && continue
@@ -147,7 +149,9 @@ run_case() {  # <name> <answers> <check-function> [opts]
             lua) lua=1 ;; nobins) nobins=1 ;; nopath) nopath=1 ;; repeat) repeat="${pair#*=}" ;;
             osrelease) osrelease="${pair#*=}" ;; shell) shell_for_case="${pair#*=}" ;;
             hyprversion) hyprversion="${pair#*=}" ;; preinstalled) preinstalled="${pair#*=}" ;;
-            cargoversion) cargoversion="${pair#*=}" ;;
+            cargoversion) cargoversion="${pair#*=}" ;; stateonly) stateonly=1 ;;
+            statedecoy) statedecoy=1 ;; statepartial) statepartial=1 ;;
+            statenoexec) statenoexec=1 ;; statefileunreadable) statefileunreadable=1 ;;
         esac
     done
 
@@ -178,6 +182,63 @@ exit 0
 EOF
         cp "$home/.local/bin/mirrik" "$home/.local/bin/mirrik-gui"
         chmod +x "$home/.local/bin/mirrik" "$home/.local/bin/mirrik-gui"
+    fi
+    # Stands in for a previous run of install.sh itself: working binaries already sitting
+    # at the default bindir, plus the state file that remembers they are there. Paired
+    # with nobins=1, this is the exact situation the state-based search exists for - a
+    # bare clone with nothing freshly built, but a working install one directory away.
+    if [ -n "$stateonly" ]; then
+        cp "$stubs/mirrik" "$stubs/mirrik-gui" "$home/.local/bin/"
+        chmod +x "$home/.local/bin/mirrik" "$home/.local/bin/mirrik-gui"
+        mkdir -p "$home/.local/state/mirrik"
+        printf 'MIRRIK_STATE_BINDIR=%s\n' "$home/.local/bin" > "$home/.local/state/mirrik/install-state"
+    fi
+    # A second, deliberately non-functional pair, known only through the state file and
+    # living away from both $here and the default bindir. Proves the search order: a
+    # fresh build next to the script has to win over a copy the state file merely
+    # remembers, never the other way round. "Non-functional" means it never answers
+    # `devices`, so step 6 fails loudly if this one ever gets installed by mistake - the
+    # check does not have to guess which copy actually ran, the symptom gives it away.
+    if [ -n "$statedecoy" ]; then
+        mkdir -p "$home/.local/state-src"
+        printf '#!/usr/bin/env bash\nexit 0\n' > "$home/.local/state-src/mirrik"
+        printf '#!/usr/bin/env bash\nexit 0\n' > "$home/.local/state-src/mirrik-gui"
+        chmod +x "$home/.local/state-src/mirrik" "$home/.local/state-src/mirrik-gui"
+        mkdir -p "$home/.local/state/mirrik"
+        printf 'MIRRIK_STATE_BINDIR=%s\n' "$home/.local/state-src" > "$home/.local/state/mirrik/install-state"
+    fi
+    # Half a pair: only mirrik made it into the remembered location, not mirrik-gui - an
+    # interrupted install, or one binary deleted by hand since. The search requires both
+    # `-x` checks to pass, so this has to be skipped entirely, not picked as a source and
+    # then fail halfway through.
+    if [ -n "$statepartial" ]; then
+        mkdir -p "$home/.local/state-src"
+        printf '#!/usr/bin/env bash\nexit 0\n' > "$home/.local/state-src/mirrik"
+        chmod +x "$home/.local/state-src/mirrik"
+        mkdir -p "$home/.local/state/mirrik"
+        printf 'MIRRIK_STATE_BINDIR=%s\n' "$home/.local/state-src" > "$home/.local/state/mirrik/install-state"
+    fi
+    # Both files are there, but neither has the executable bit - permissions slipped, or
+    # they were copied by something that does not preserve them. Same expectation as the
+    # partial pair above: skipped, not treated as a usable source.
+    if [ -n "$statenoexec" ]; then
+        mkdir -p "$home/.local/state-src"
+        printf '#!/usr/bin/env bash\nexit 0\n' > "$home/.local/state-src/mirrik"
+        printf '#!/usr/bin/env bash\nexit 0\n' > "$home/.local/state-src/mirrik-gui"
+        mkdir -p "$home/.local/state/mirrik"
+        printf 'MIRRIK_STATE_BINDIR=%s\n' "$home/.local/state-src" > "$home/.local/state/mirrik/install-state"
+    fi
+    # The state FILE itself unreadable, rather than the binaries it points at - a
+    # permission slip on ~/.local/state instead of on the install. install.sh already
+    # guards this with `[ -r "$statefile" ]`; this proves the guard holds up when there
+    # is genuinely nothing else to fall back on but "not found, offer to build".
+    if [ -n "$statefileunreadable" ]; then
+        mkdir -p "$home/.local/state-src"
+        cp "$stubs/mirrik" "$stubs/mirrik-gui" "$home/.local/state-src/"
+        chmod +x "$home/.local/state-src/mirrik" "$home/.local/state-src/mirrik-gui"
+        mkdir -p "$home/.local/state/mirrik"
+        printf 'MIRRIK_STATE_BINDIR=%s\n' "$home/.local/state-src" > "$home/.local/state/mirrik/install-state"
+        chmod 000 "$home/.local/state/mirrik/install-state"
     fi
 
     local sysbin="$home/sysbin"
@@ -425,6 +486,25 @@ check_replaces_old() {   # existing version: reported and switched off beforehan
     grep -q 'old-mirrik off' "$STUBLOG" 2>/dev/null \
         || echo "the running mirror was not switched off"
 }
+check_found_via_state() {   # no fresh build anywhere, but the state file knows a working one
+    installed_ok; has_desktop
+    grep -q 'Could not find built binaries' <<<"$OUT" \
+        && echo "still claims nothing was found, even though the state file points at a working install"
+    grep -qi 'Build them now' <<<"$OUT" \
+        && echo "offered to build from source, even though a working install was already there"
+    grep -qF "Found them in: $HOME_UNDER_TEST/.local/bin" <<<"$OUT" \
+        || echo "did not report finding the binaries at the location the state file named"
+}
+check_prefers_fresh_over_state() {   # a real build next to the script beats a state-only decoy
+    installed_ok; has_desktop
+    grep -qF "Found them in: $REPO" <<<"$OUT" \
+        || echo "did not prefer the fresh build next to the script over the copy only known from the state file"
+}
+check_state_ignored_falls_back() {   # a state entry that does not qualify is treated as nothing
+    grep -q 'Could not find built binaries' <<<"$OUT" \
+        || echo "did not fall back to the normal not-found flow despite an unusable state entry"
+    check_abort
+}
 check_eof() {   # stdin ends in the middle of the questions
     canary_clean
     grep -qi 'unbound variable\|syntax error' <<<"$OUT" && echo "shell error on EOF"
@@ -554,6 +634,54 @@ test_state_skip_carries_forward() {
     rm -rf "$home"
 }
 
+# Needs its own function, not a CASES entry: typing a *custom* bindir means the answer has
+# to name $home, and $home does not exist yet when the CASES table below is written - the
+# same reason the other test_state_* functions above build their own environment instead
+# of going through run_case.
+test_state_source_into_new_target() {
+    local name='state-source-into-new-target'
+    local home stubs sysbin path out rc problems
+    home="$(mktemp -d)"
+    mkdir -p "$home/.config" "$home/.local/bin" "$home/.local/bin2" "$home/.local/share/applications"
+    stubs="$home/stubs"
+    make_stubs "$stubs" 'PulseAudio (on PipeWire 1.6.8)'
+    sysbin="$home/sysbin"
+    make_minimal_path "$sysbin"
+
+    # No fresh build in $REPO on purpose - that is what proves the copy actually comes
+    # from the state-known bindir, and not from a build that happened to be lying around
+    # anyway. This is the same setup as found-via-state-no-fresh-build, except this run
+    # types a *different* target than the one the state file names, which is the one
+    # branch that case cannot reach (there, source and target are the same file).
+    cp "$stubs/mirrik" "$stubs/mirrik-gui" "$home/.local/bin/"
+    chmod +x "$home/.local/bin/mirrik" "$home/.local/bin/mirrik-gui"
+    mkdir -p "$home/.local/state/mirrik"
+    printf 'MIRRIK_STATE_BINDIR=%s\n' "$home/.local/bin" > "$home/.local/state/mirrik/install-state"
+
+    path="$stubs:$home/.local/bin:$sysbin"
+    out="$(printf '%s\n' "$(printf '%s' "$home/.local/bin2$(a y 1 2 a 1 y)" | tr ',' '\n')" | env -i \
+        HOME="$home" PATH="$path" \
+        XDG_CONFIG_HOME="$home/.config" XDG_DATA_HOME="$home/.local/share" \
+        STUB_LOG="$home/stub.log" SHELL=/bin/bash TERM=dumb \
+        bash "$INSTALLER" 2>&1)"
+    rc=$?
+
+    problems=()
+    [ "$rc" = 0 ] || problems+=("exit code $rc instead of 0")
+    [ -x "$home/.local/bin2/mirrik" ]     || problems+=("mirrik was not installed into the new target")
+    [ -x "$home/.local/bin2/mirrik-gui" ] || problems+=("mirrik-gui was not installed into the new target")
+    grep -q 'Could not find built binaries' <<<"$out" \
+        && problems+=("claimed nothing was found, even though the state file names a working install")
+    grep -qF "Found them in: $home/.local/bin" <<<"$out" \
+        || problems+=("did not report finding the binaries at the state-known location")
+    [ -x "$home/.local/bin/mirrik" ] \
+        || problems+=("the state-known copy is gone - it should only be read from here, not moved")
+    [ -n "${VERBOSE:-}" ] && [ "${#problems[@]}" -gt 0 ] && printf '%s\n' "$out" | tail -25 | sed 's/^/        | /'
+
+    report_case "$name" "${problems[@]}"
+    rm -rf "$home"
+}
+
 a() {  # <desktop:y|n> <wm> <mods> <key> [more answers...]
     local d="$1" wm="$2" mods="$3" key="$4"; shift 4
     local rest=""; for x in "$@"; do rest="$rest,$x"; done
@@ -563,6 +691,11 @@ a() {  # <desktop:y|n> <wm> <mods> <key> [more answers...]
 CASES=(
   "hyprland-append|$(a y 1 2 a 1 y)|check_appended|cfg=.config/hypr/hyprland.conf"
   "over-old-version|$(a y 1 2 a 1 y)|check_replaces_old|cfg=.config/hypr/hyprland.conf;preinstalled=0.0.9"
+  "found-via-state-no-fresh-build|$(a y 1 2 a 1 y)|check_found_via_state|cfg=.config/hypr/hyprland.conf;nobins=1;stateonly=1"
+  "fresh-build-beats-state-decoy|$(a y 1 2 a 1 y)|check_prefers_fresh_over_state|cfg=.config/hypr/hyprland.conf;statedecoy=1"
+  "state-partial-pair-falls-back|n|check_state_ignored_falls_back|nobins=1;statepartial=1"
+  "state-non-executable-falls-back|n|check_state_ignored_falls_back|nobins=1;statenoexec=1"
+  "state-file-unreadable-falls-back|n|check_state_ignored_falls_back|nobins=1;statefileunreadable=1"
   "sway-append|$(a y 2 2 a 1 y)|check_appended|cfg=.config/sway/config"
   "i3-append|$(a y 3 2 a 1 y)|check_appended|cfg=.config/i3/config"
   "river-append|$(a y 5 2 a 1 y)|check_appended|cfg=.config/river/init"
@@ -661,7 +794,8 @@ done
 # These two-run cases don't go through the CASES table, since they each need two
 # different sequences of answers in the same test home instead of just one.
 for fn in test_state_switch_compositor test_state_switch_bindir \
-          test_state_no_false_positive test_state_skip_carries_forward; do
+          test_state_no_false_positive test_state_skip_carries_forward \
+          test_state_source_into_new_target; do
     [ -n "$filter" ] && [[ "$fn" != *"$filter"* ]] && continue
     "$fn"
 done

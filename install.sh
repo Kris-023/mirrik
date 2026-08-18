@@ -109,11 +109,12 @@ append_block() {  # append_block <file> <block> <what to say afterwards>
 # ---------------------------------------------------------------- state from earlier runs
 #
 # A small file remembers what a previous run actually wrote, so the closing "to undo"
-# list can name exactly what is there instead of a generic guess - and so it can flag
-# what a *different* earlier choice (a different compositor, a different install
-# directory) left behind. This is read-only here: nothing is deleted or changed on the
-# strength of it, the values only ever end up printed for the person running this
-# script - same rule as every other destructive step in this file.
+# list can name exactly what is there instead of a generic guess, so it can flag what a
+# *different* earlier choice (a different compositor, a different install directory) left
+# behind, and so step 3 below can find binaries from a previous install when this run has
+# none of its own. Reading it never destroys anything by itself, though - it only ever
+# feeds into a message or a search, never straight into an `rm` or an overwrite, same rule
+# as every other destructive step in this file.
 state_dir="${XDG_STATE_HOME:-$HOME/.local/state}/mirrik"
 statefile="$state_dir/install-state"
 MIRRIK_STATE_WM=''; MIRRIK_STATE_BINDIR=''; MIRRIK_STATE_APPS=''
@@ -343,10 +344,16 @@ heading '3. The program itself'
 
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source_dir=''
-# Only release builds and the script's own folder. `target/debug` is deliberately not a
-# candidate: a stray debug build there would be installed over a proper release without
-# anyone noticing.
-for dir in "$here/target/release" "$here"; do
+# We look in release builds, the script's own folder, and - as a last resort - wherever a
+# previous run of this very installer left things, via the state file read further above.
+# That covers the case where someone reruns this script from a bare clone with nothing
+# built yet, while Mirrik is already sitting in ~/.local/bin from before: without this,
+# the installer would claim it found nothing and offer to build from scratch, even though
+# a working copy is one directory away. `target/debug` stays deliberately off this list -
+# a stray debug build there would get installed over a proper release without anyone
+# noticing.
+for dir in "$here/target/release" "$here" "$MIRRIK_STATE_BINDIR"; do
+    [ -n "$dir" ] || continue
     if [ -x "$dir/mirrik" ] && [ -x "$dir/mirrik-gui" ]; then
         source_dir="$dir"
         break
@@ -427,7 +434,16 @@ esac
 # is exactly what happened when the tool was renamed. So say what is being replaced, and
 # switch it off first. Borrowed from install.ps1, which has done this from the start
 # because Windows refuses to overwrite a running .exe at all.
-if [ -x "$bindir/mirrik" ]; then
+#
+# One case needs telling apart from the rest, now that step 3 can find binaries via the
+# state file: if that search landed on the very folder we are about to install into,
+# source and target are the same file, not an old version and a new one. `-ef` catches
+# that by inode rather than by comparing paths as text, which stays correct even if one
+# side has a trailing slash or got here through a symlink.
+same_file=''
+[ -e "$bindir/mirrik" ] && [ "$source_dir/mirrik" -ef "$bindir/mirrik" ] && same_file=1
+
+if [ -x "$bindir/mirrik" ] && [ -z "$same_file" ]; then
     old_version="$("$bindir/mirrik" --version 2>/dev/null | head -n1 || true)"
     if [ -n "$old_version" ]; then
         dim "  Replacing what is already installed: $old_version"
@@ -437,8 +453,15 @@ if [ -x "$bindir/mirrik" ]; then
     "$bindir/mirrik" off >/dev/null 2>&1 || true
 fi
 
-install -Dm755 "$source_dir/mirrik"     "$bindir/mirrik"
-install -Dm755 "$source_dir/mirrik-gui" "$bindir/mirrik-gui"
+if [ -n "$same_file" ]; then
+    # Nothing to copy - and `install` would refuse a file onto itself anyway. The mirror,
+    # if one happens to be running, is left alone too: unlike the branch above, nothing
+    # about it is about to change underneath it.
+    dim '  Already there - nothing new to copy in.'
+else
+    install -Dm755 "$source_dir/mirrik"     "$bindir/mirrik"
+    install -Dm755 "$source_dir/mirrik-gui" "$bindir/mirrik-gui"
+fi
 ok "  Installed into $bindir"
 
 path_rc=''   # set below if a shell rc ends up holding a Mirrik block (set -u is on)
