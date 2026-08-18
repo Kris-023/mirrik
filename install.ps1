@@ -583,6 +583,12 @@ if (Confirm '  Create the shortcut?') {
         [Environment]::GetFolderPath('CommonDesktopDirectory')
     ) | Where-Object { $_ -and (Test-Path $_) } | Select-Object -Unique
 
+    # Say something first: reading a shortcut goes through COM and costs a millisecond or
+    # so each, more when the disk is cold. A Start menu with a few hundred entries - 257 on
+    # the machine this was measured on - means about two seconds of nothing happening right
+    # after the user pressed Enter, and silence right there reads as a hang.
+    Say '  Looking at your other shortcuts to see which hotkeys are taken...' DarkGray
+
     $taken = @{}
     foreach ($searchRoot in $searchRoots) {
         Get-ChildItem $searchRoot -Recurse -Filter *.lnk -ErrorAction SilentlyContinue |
