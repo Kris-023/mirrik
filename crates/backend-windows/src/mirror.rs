@@ -64,6 +64,65 @@ const RENDER_BUFFER_HNS: i64 = 600_000;
 /// `AUDCLNT_BUFFERFLAGS_SILENT`: the pointer holds stale memory and means silence.
 const BUFFERFLAGS_SILENT: u32 = 0x2;
 
+/// How many samples may pile up before the drift correction starts nudging.
+///
+/// Samples, not frames: the buffer is interleaved, so one frame is `channels` entries.
+fn max_buffered_samples(rate: u32, channels: usize) -> usize {
+    (MAX_BUFFERED_MS as usize * rate as usize / 1000) * channels
+}
+
+/// How full we try to keep the target's buffer, in frames.
+///
+/// Capped at the buffer the device actually gave us - asking for more than exists would
+/// mean we never stop topping up.
+fn target_fill_frames(rate: u32, render_frames: u32) -> u32 {
+    (TARGET_FILL_MS * rate / 1000).min(render_frames)
+}
+
+/// Pulls the buffer back down when the two device clocks have drifted apart.
+///
+/// One frame per pass, on purpose: the two devices run on separate clocks, so the buffer
+/// creeps towards one end over minutes. Dropping a single frame each time absorbs that as
+/// a run of inaudible nudges. An earlier version trimmed the whole excess at once and you
+/// heard it as one jump.
+///
+/// The second, harsher trim is for a real burst - a long stall, not clock drift - where
+/// nudging one frame at a time would never catch up.
+fn trim_drift(buffer: &mut VecDeque<f32>, max_samples: usize, channels: usize) {
+    if buffer.len() > max_samples {
+        buffer.drain(..channels);
+    }
+    if buffer.len() > max_samples * 3 {
+        let excess = buffer.len() - max_samples;
+        buffer.drain(..excess);
+    }
+}
+
+/// How many frames to hand the target this pass.
+///
+/// Top up to a fixed shallow level instead of filling everything that is free. Writing
+/// into all the free space would push a full buffer's worth of audio ahead of the
+/// listener, and that delay never recovers - you hear it for as long as the mirror runs.
+///
+/// Both subtractions saturate. A padding above the buffer size cannot happen while the
+/// device behaves, and if one ever does, "write nothing this pass" is the answer that
+/// keeps the mirror running instead of panicking in the holder.
+fn frames_to_write(target_fill: u32, padding: u32, render_frames: u32) -> u32 {
+    target_fill
+        .saturating_sub(padding)
+        .min(render_frames.saturating_sub(padding))
+}
+
+/// Empties the buffer into `out`, padding with silence.
+///
+/// Anything the tap did not deliver becomes silence rather than a gap. This is what keeps
+/// the render client from starving while the source is quiet.
+fn fill_from(out: &mut [f32], buffer: &mut VecDeque<f32>) {
+    for sample in out.iter_mut() {
+        *sample = buffer.pop_front().unwrap_or(0.0);
+    }
+}
+
 /// Why the inner loop returned.
 enum Outcome {
     /// The holder was asked to stop, or the process is going away.
@@ -219,8 +278,8 @@ unsafe fn mirror_once(
         .GetBufferSize()
         .context("cannot read the target buffer size")?;
     let channels = cap.channels as usize;
-    let max_samples = (MAX_BUFFERED_MS as usize * cap.rate as usize / 1000) * channels;
-    let target_fill = (TARGET_FILL_MS * cap.rate / 1000).min(render_frames);
+    let max_samples = max_buffered_samples(cap.rate, channels);
+    let target_fill = target_fill_frames(cap.rate, render_frames);
 
     capture_client.Start().context("cannot start the capture")?;
     render_client.Start().context("cannot start playback")?;
@@ -290,18 +349,7 @@ unsafe fn mirror_once(
                 .ReleaseBuffer(frames)
                 .context("cannot release the tap buffer")?;
 
-            // Drift correction. The two devices run on separate clocks, so over time the
-            // buffer creeps towards one end. Dropping a single frame per pass absorbs
-            // that as a run of inaudible nudges; trimming the whole excess at once, as an
-            // earlier version did, is one audible jump instead.
-            if buffer.len() > max_samples {
-                buffer.drain(..channels);
-            }
-            // Emergency brake for a real burst — a long stall, not clock drift.
-            if buffer.len() > max_samples * 3 {
-                let excess = buffer.len() - max_samples;
-                buffer.drain(..excess);
-            }
+            trim_drift(&mut buffer, max_samples, channels);
         }
 
         if source_lost {
@@ -317,13 +365,7 @@ unsafe fn mirror_once(
             Err(e) => return Err(e).context("cannot read the target buffer fill level"),
         };
 
-        // Top up to a fixed shallow level instead of filling everything that is free.
-        // Writing into all the free space would push a full buffer's worth of audio ahead
-        // of the listener, and that delay never recovers — it is heard for as long as the
-        // mirror runs.
-        let want = target_fill
-            .saturating_sub(padding)
-            .min(render_frames - padding);
+        let want = frames_to_write(target_fill, padding, render_frames);
 
         if want > 0 {
             let slot = match render.GetBuffer(want) {
@@ -332,13 +374,7 @@ unsafe fn mirror_once(
                 Err(e) => return Err(e).context("cannot claim the target buffer"),
             };
             let out = std::slice::from_raw_parts_mut(slot as *mut f32, want as usize * channels);
-
-            // Anything the tap did not deliver becomes silence rather than a gap. This is
-            // the line that keeps the render client from starving while the source is
-            // quiet.
-            for sample in out.iter_mut() {
-                *sample = buffer.pop_front().unwrap_or(0.0);
-            }
+            fill_from(out, &mut buffer);
             render
                 .ReleaseBuffer(want, 0)
                 .context("cannot hand the target buffer back")?;
@@ -352,4 +388,117 @@ unsafe fn mirror_once(
     let _ = capture_client.Stop();
     let _ = render_client.Stop();
     Ok(outcome)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // 48 kHz stereo is what nearly every desktop hands us, so the numbers below are the
+    // ones this actually runs with.
+    const RATE: u32 = 48_000;
+    const CH: usize = 2;
+
+    fn buffer_of(samples: usize) -> VecDeque<f32> {
+        (0..samples).map(|i| i as f32).collect()
+    }
+
+    #[test]
+    fn the_buffer_ceiling_counts_samples_not_frames() {
+        // 20 ms at 48 kHz is 960 frames, and a frame is two samples in stereo.
+        assert_eq!(max_buffered_samples(RATE, CH), 1_920);
+        // Same milliseconds, twice the channels, twice the samples - a 5.1 device must
+        // not end up with a third of the audio the stereo one gets.
+        assert_eq!(max_buffered_samples(RATE, 6), 5_760);
+        // And a higher rate needs proportionally more room for the same 20 ms.
+        assert_eq!(max_buffered_samples(192_000, CH), 7_680);
+    }
+
+    #[test]
+    fn we_never_aim_deeper_than_the_buffer_we_got() {
+        // Room to spare: the 20 ms target is what we steer towards.
+        assert_eq!(target_fill_frames(RATE, 4_800), 960);
+        // A device with a tiny buffer gets the whole of it and not one frame more,
+        // otherwise the top-up would never be satisfied and the loop would spin.
+        assert_eq!(target_fill_frames(RATE, 400), 400);
+    }
+
+    #[test]
+    fn drift_is_nudged_one_frame_at_a_time() {
+        let max = max_buffered_samples(RATE, CH);
+
+        // Below the ceiling nothing is touched at all.
+        let mut b = buffer_of(max);
+        trim_drift(&mut b, max, CH);
+        assert_eq!(b.len(), max, "a buffer at the ceiling must be left alone");
+
+        // One sample over: exactly one frame goes, and it goes from the front - the
+        // oldest audio is the one nobody misses.
+        let mut b = buffer_of(max + 1);
+        trim_drift(&mut b, max, CH);
+        assert_eq!(b.len(), max + 1 - CH);
+        assert_eq!(
+            b.front(),
+            Some(&(CH as f32)),
+            "the oldest frame must be the one dropped"
+        );
+    }
+
+    #[test]
+    fn a_real_burst_is_cut_back_in_one_go() {
+        let max = max_buffered_samples(RATE, CH);
+
+        // Three times the ceiling is no longer drift, it is a stall. Nudging one frame
+        // per pass would take thousands of passes to recover from this.
+        let mut b = buffer_of(max * 4);
+        trim_drift(&mut b, max, CH);
+        assert_eq!(
+            b.len(),
+            max,
+            "a burst must come back to the ceiling immediately"
+        );
+
+        // Just under the emergency line, the gentle nudge is still the right answer.
+        let mut b = buffer_of(max * 3);
+        trim_drift(&mut b, max, CH);
+        assert_eq!(b.len(), max * 3 - CH);
+    }
+
+    #[test]
+    fn the_top_up_stays_shallow_and_never_overruns() {
+        let fill = target_fill_frames(RATE, 4_800);
+
+        // An empty target gets topped up to the shallow level, not to the brim.
+        assert_eq!(frames_to_write(fill, 0, 4_800), fill);
+        // Half full: only the difference.
+        assert_eq!(frames_to_write(fill, 400, 4_800), fill - 400);
+        // Already deeper than we aim for - write nothing and let it drain.
+        assert_eq!(frames_to_write(fill, fill, 4_800), 0);
+        assert_eq!(frames_to_write(fill, fill + 100, 4_800), 0);
+        // The free space is the second limit - and with an aim that came out of
+        // target_fill_frames it never bites, because that cap already keeps the aim
+        // inside the buffer. It only shows up if someone hands in a deeper aim than
+        // the device can hold, which is the belt to that braces.
+        assert_eq!(frames_to_write(fill, 900, 1_000), 60);
+        assert_eq!(frames_to_write(1_000, 0, 500), 500);
+        // And a padding past the buffer size answers "nothing" instead of panicking,
+        // which is what the subtraction used to do in a debug build.
+        assert_eq!(frames_to_write(fill, 5_000, 4_800), 0);
+    }
+
+    #[test]
+    fn a_quiet_source_is_padded_with_silence_not_a_gap() {
+        let mut b = buffer_of(4);
+        let mut out = [-1.0f32; 6];
+        fill_from(&mut out, &mut b);
+        assert_eq!(out, [0.0, 1.0, 2.0, 3.0, 0.0, 0.0]);
+        assert!(b.is_empty(), "everything available must be handed over");
+
+        // More waiting than asked for: the rest stays for the next pass, in order.
+        let mut b = buffer_of(6);
+        let mut out = [-1.0f32; 2];
+        fill_from(&mut out, &mut b);
+        assert_eq!(out, [0.0, 1.0]);
+        assert_eq!(b.front(), Some(&2.0));
+    }
 }
