@@ -11,12 +11,12 @@
 # compositor. Stubs check the logic, not reality - and that's exactly what tripped up
 # the first real Linux run, even though the logic itself had already passed here.
 #
-# Usage:   tools/test-install.sh              run everything
-#          tools/test-install.sh hyprland     only cases whose name contains that
-#          VERBOSE=1 tools/test-install.sh    show the installer's output on failures
+# Usage:   tools/linux/test-install.sh              run everything
+#          tools/linux/test-install.sh hyprland     only cases whose name contains that
+#          VERBOSE=1 tools/linux/test-install.sh    show the installer's output on failures
 set -uo pipefail
 
-REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 INSTALLER="$REPO/install.sh"
 [ -x "$INSTALLER" ] || { echo "install.sh not found: $INSTALLER" >&2; exit 1; }
 
@@ -773,12 +773,12 @@ CASES=(
 # If the generated full matrix happens to sit next to this script, we load it in too -
 # that way the hand-written special cases stay up top, and the full enumeration just
 # comes along after them.
-if [ -f "$REPO/tools/matrix-cases.txt" ] && [ -z "${NO_MATRIX:-}" ]; then
+if [ -f "$REPO/tools/linux/matrix-cases.txt" ] && [ -z "${NO_MATRIX:-}" ]; then
     while IFS= read -r line; do
         [ -z "$line" ] && continue
         case "$line" in \#*) continue ;; esac
         CASES+=("$line")
-    done < "$REPO/tools/matrix-cases.txt"
+    done < "$REPO/tools/linux/matrix-cases.txt"
 fi
 
 filter="${1:-}"

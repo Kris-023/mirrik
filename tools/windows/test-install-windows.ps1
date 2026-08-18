@@ -3,7 +3,7 @@
     The half of install.ps1 that only a real Windows machine can answer.
 
 .DESCRIPTION
-    tools/test-install.ps1 covers roughly 30 of the 35 case groups by stubbing out
+    tools/windows/test-install.ps1 covers roughly 30 of the 35 case groups by stubbing out
     everything that needs Windows. The rest is exactly the part where a stub proves
     nothing: does the shortcut really carry the hotkey, does the PATH entry in the
     registry really work, is a running .exe really unwritable. This runs those for real
@@ -25,12 +25,12 @@
     installed.
 
 .EXAMPLE
-    powershell -ExecutionPolicy Bypass -File tools/test-install-windows.ps1
+    powershell -ExecutionPolicy Bypass -File tools/windows/test-install-windows.ps1
 #>
 
 $ErrorActionPreference = 'Stop'
 
-$Repo = (Get-Item (Join-Path $PSScriptRoot '..')).FullName
+$Repo = (Get-Item (Join-Path $PSScriptRoot '../..')).FullName
 $Installer = Join-Path $Repo 'install.ps1'
 $Release = Join-Path $Repo 'target\release'
 
@@ -79,7 +79,7 @@ function Invoke-Installer([string[]]$Answers, [switch]$Uninstall) {
 # ---------------------------------------------------------------- before anything
 
 if ($PSVersionTable.Platform -and $PSVersionTable.Platform -ne 'Win32NT') {
-    Write-Error 'This bench is the Windows-only half. On Linux, run tools/test-install.ps1.'
+    Write-Error 'This bench is the Windows-only half. On Linux, run tools/windows/test-install.ps1.'
     exit 1
 }
 foreach ($exe in 'mirrik.exe', 'mirrik-gui.exe') {

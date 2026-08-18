@@ -1,5 +1,5 @@
 <#
-Heads up: tools/test-install.ps1 starts this as a fresh pwsh process for every single
+Heads up: tools/windows/test-install.ps1 starts this as a fresh pwsh process for every single
 case - you shouldn't be running it directly.
 
 Dot-sourcing install.ps1 only defines its functions, thanks to its guard - nothing

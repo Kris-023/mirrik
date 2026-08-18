@@ -3,10 +3,10 @@
     # its findings under 30 known ones, and then nobody reads the list at all - which is
     # how a real finding gets missed.
     #
-    # Run it over the installer and both benches:
-    #   Invoke-ScriptAnalyzer -Path install.ps1 -Settings PSScriptAnalyzerSettings.psd1
+    # Run it over the installer and both benches (paths relative to the repo root):
+    #   Invoke-ScriptAnalyzer -Path install.ps1 -Settings tools/windows/PSScriptAnalyzerSettings.psd1
     #
-    # A note if you get parse errors from tools/test-install.ps1: Windows PowerShell 5.1
+    # A note if you get parse errors from tools/windows/test-install.ps1: Windows PowerShell 5.1
     # reads a UTF-8 file without a BOM as ANSI, and that file has a few non-ASCII
     # characters in it. They are not real errors - hand the analyzer decoded text instead:
     #   Invoke-ScriptAnalyzer -ScriptDefinition (Get-Content -Raw -Encoding UTF8 <file>)

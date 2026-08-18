@@ -36,6 +36,8 @@ crates/
 install.sh               guided Linux installer, asks before every step
 install.ps1               guided Windows installer, -Uninstall reverses it
 tools/                   test benches for both installers (see "Testing the installers")
+  linux/                 test-install.sh, the compositor matrix generator, and its generated case file
+  windows/               test-install.ps1, its dot-source driver, the real-Windows bench, and the PSScriptAnalyzer settings for all three
 screenshots/             what the window actually looks like - check these for GUI changes
 LICENSE, README.md       the public-facing files; everything above is the whole story
 ```
@@ -56,8 +58,8 @@ this file doesn't have, ask rather than guess.
 | Colours, fonts, the two skins | `crates/gui/src/theme.rs` |
 | PipeWire-specific behaviour | `crates/backend-linux/src/lib.rs` |
 | WASAPI-specific behaviour | `crates/backend-windows/src/lib.rs` |
-| Linux install/uninstall flow | `install.sh`, tested by `tools/test-install.sh` |
-| Windows install/uninstall flow | `install.ps1`, tested by `tools/test-install.ps1` |
+| Linux install/uninstall flow | `install.sh`, tested by `tools/linux/test-install.sh` |
+| Windows install/uninstall flow | `install.ps1`, tested by `tools/windows/test-install.ps1` |
 
 If a change seems to need the GUI to check which OS it's running on, that's usually a sign
 the trait is missing something — see "The `MirrorBackend` trait is the platform boundary"
@@ -112,8 +114,8 @@ project most likely to break silently on a platform nobody just tested by hand. 
 own test bench that fakes the whole environment rather than touching the real system:
 
 ```sh
-tools/test-install.sh              # Linux installer, 155 cases
-pwsh tools/test-install.ps1        # Windows installer, 38 cases, runs fine on Linux via pwsh
+tools/linux/test-install.sh         # Linux installer, 161 cases
+pwsh tools/windows/test-install.ps1 # Windows installer, 38 cases, runs fine on Linux via pwsh
 ```
 
 Both fake every external command they call (`pactl`, `gsettings`, `dbus-send`, the registry,
@@ -128,7 +130,7 @@ overwritten are questions only Windows itself can settle, so there is a third be
 exactly those:
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File tools/test-install-windows.ps1   # 9 checks, real Windows only
+powershell -ExecutionPolicy Bypass -File tools/windows/test-install-windows.ps1   # 9 checks, real Windows only
 ```
 
 This one is not faked. `APPDATA` and `LOCALAPPDATA` point into a temp directory, so the

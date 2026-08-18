@@ -3,9 +3,9 @@
     Test bench for install.ps1 - runs it through its paces without touching your actual system.
 
 .DESCRIPTION
-    Works the same way as tools/test-install.sh: every case gets its own fresh, isolated
+    Works the same way as tools/linux/test-install.sh: every case gets its own fresh, isolated
     HOME (APPDATA/LOCALAPPDATA point into a mktemp directory) plus a fresh pwsh process
-    (tools/test-install-driver.ps1) that dot-sources install.ps1. Thanks to its guard
+    (tools/windows/test-install-driver.ps1) that dot-sources install.ps1. Thanks to its guard
     (`if ($MyInvocation.InvocationName -ne '.')`), that only loads the function
     definitions - none of the actual installer runs yet. From there, the driver swaps
     out just the functions sitting on Windows-only APIs (registry, COM, user32 P/Invoke,
@@ -21,16 +21,16 @@
     Only run the cases whose name contains this text.
 
 .EXAMPLE
-    tools/test-install.ps1
+    tools/windows/test-install.ps1
 .EXAMPLE
-    tools/test-install.ps1 hotkey
+    tools/windows/test-install.ps1 hotkey
 .EXAMPLE
-    VERBOSE=1 tools/test-install.ps1
+    VERBOSE=1 tools/windows/test-install.ps1
 #>
 param([string]$Filter = '')
 
 $ErrorActionPreference = 'Stop'
-$Repo = (Get-Item (Join-Path $PSScriptRoot '..')).FullName
+$Repo = (Get-Item (Join-Path $PSScriptRoot '../..')).FullName
 $Installer = Join-Path $Repo 'install.ps1'
 $Driver = Join-Path $PSScriptRoot 'test-install-driver.ps1'
 if (-not (Test-Path $Installer)) { Write-Error "install.ps1 not found: $Installer"; exit 1 }
