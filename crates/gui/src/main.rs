@@ -81,6 +81,58 @@ fn backend() -> anyhow::Result<impl MirrorBackend> {
     mirrik_backend_linux::PipeWireBackend::new()
 }
 
+/// Reads the desktop's light/dark preference from the XDG desktop portal.
+///
+/// winit 0.30's Wayland backend never queries this - `Window::theme()` there only reflects
+/// a value set from inside the app, never the compositor's own setting - so without this,
+/// `egui::Context::theme()` always falls back to its hard-coded `Theme::Dark` default and
+/// the window renders OLED even on a light desktop. X11 is not better off: winit's X11
+/// backend does not read `_GTK_THEME_VARIANT`/Xsettings either.
+///
+/// Shelled out to `dbus-send`, the same way this project already drives PipeWire through
+/// `pactl`/`pw-cli` rather than linking a library - it ships with the `dbus` package
+/// itself, not with GNOME or with systemd, so it is there under Hyprland, Sway, i3 and the
+/// rest without an extra dependency. Read once at startup, not on a timer or a signal
+/// subscription: for a window that opens on a keystroke and closes on `Esc`, "the answer at
+/// launch" and "the live answer" are the same thing in practice, exactly the reasoning
+/// already accepted for Windows below - and a subscription would need a background thread
+/// this tool otherwise has no reason to run.
+///
+/// Returns `None` on anything short of a clean answer (tool missing, portal absent, no
+/// preference set) so the caller can simply leave `egui`'s own fallback in place.
+#[cfg(target_os = "linux")]
+fn linux_system_theme() -> Option<egui::Theme> {
+    let out = std::process::Command::new("dbus-send")
+        .args([
+            "--session",
+            "--print-reply",
+            "--dest=org.freedesktop.portal.Desktop",
+            "/org/freedesktop/portal/desktop",
+            "org.freedesktop.portal.Settings.Read",
+            "string:org.freedesktop.appearance",
+            "string:color-scheme",
+        ])
+        .output()
+        .ok()?;
+    if !out.status.success() {
+        return None;
+    }
+    // A line like `   variant       variant          uint32 2` - "uint32 " sits after the
+    // two "variant" wrapper words, not at the start of the (trimmed) line, so this looks
+    // for it anywhere rather than as a prefix. 1 is dark, 2 is light, 0 or anything else is
+    // "no preference", which is left to egui's own default rather than guessed at here.
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    let value = stdout.lines().find_map(|line| {
+        let (_, rest) = line.rsplit_once("uint32 ")?;
+        rest.trim().parse::<u32>().ok()
+    })?;
+    match value {
+        1 => Some(egui::Theme::Dark),
+        2 => Some(egui::Theme::Light),
+        _ => None,
+    }
+}
+
 #[cfg(target_os = "windows")]
 fn backend() -> anyhow::Result<impl MirrorBackend> {
     mirrik_backend_windows::WasapiBackend::new()
@@ -172,6 +224,13 @@ fn main() {
         options,
         Box::new(move |cc| {
             theme::install_fonts(&cc.egui_ctx);
+            // See `linux_system_theme` for why this is needed at all on Linux. A `None`
+            // here (tool missing, no preference set) leaves egui's own System/fallback
+            // logic in charge, same as before this call existed.
+            #[cfg(target_os = "linux")]
+            if let Some(theme) = linux_system_theme() {
+                cc.egui_ctx.set_theme(theme);
+            }
             Ok(Box::new(app))
         }),
     );
@@ -486,13 +545,18 @@ impl<B: MirrorBackend> eframe::App for Window<B> {
         let ctx = ui.ctx().clone();
 
         // Follow the desktop's own light/dark setting. eframe leaves the preference on
-        // `System`, so this is whatever the platform reports.
+        // `System` unless `linux_system_theme` overrode it in `main`, so this is whatever
+        // the platform reports through `ctx.theme()`.
         //
         // Checked every frame rather than once, because it costs nothing and the answer
-        // can change. On Windows 11 it does not: winit asks `uxtheme` ordinal 132, which
-        // hands a process the same answer for its whole life, so a desktop flipped to
-        // dark shows up the next time the window opens. For a window that opens on a
-        // keystroke and closes on Esc that is the same thing in practice.
+        // *could* change without a restart. In practice neither platform actually offers
+        // that: on Windows 11, winit asks `uxtheme` ordinal 132, which hands a process the
+        // same answer for its whole life; on Linux, the answer is read once at startup (see
+        // `linux_system_theme`) and never re-read, since watching the portal for changes
+        // would need a background thread this tool otherwise has no reason to run. Either
+        // way, a desktop flipped to the other theme shows up the next time the window
+        // opens - and for a window that opens on a keystroke and closes on Esc, that is the
+        // same thing in practice.
         let theme = ctx.theme();
         if self.theme != Some(theme) {
             self.theme = Some(theme);
