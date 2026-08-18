@@ -67,10 +67,7 @@ fn describes_the_machines_outputs() {
         "\nbase latency: {} ms (2 x device period)",
         caps.base_latency_ms
     );
-    println!(
-        "{:<46} {:>7}  {:>5}  {}",
-        "device", "rate", "bits", "transport"
-    );
+    println!("{:<46} {:>7}  {:>5}  transport", "device", "rate", "bits");
     for d in &devices {
         let fmt = match b.mix_format(&d.id) {
             Ok((rate, bits, ch)) => format!("{rate:>7} {bits:>5}  {ch}ch"),

@@ -12,6 +12,8 @@ use mirrik_core::{DeviceId, MirrorTarget};
 fn target(pid: u32, image: &str) -> MirrorTarget {
     MirrorTarget {
         device: DeviceId("{0.0.0.00000000}.{test}".into()),
+        // Liveness never looks at the name, so an empty one is honest here.
+        name: String::new(),
         holder_pid: pid,
         holder_pattern: image.into(),
     }
