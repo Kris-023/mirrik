@@ -79,10 +79,13 @@ converts on the fly so you don't have to think about it.
   Windows, 42 ms on Linux). Bluetooth adds roughly 200 ms of its own, and Mirrik labels those
   destinations so you know before you notice it in your ears.
 - **Survives you changing things.** Switch your main output mid-session and the mirror
-  follows along; unplug a destination and it just ends cleanly, no error dialog.
+  follows along. Unplug a destination and Mirrik doesn't panic or throw an error — it just
+  waits, ready to pick back up the moment the device returns.
 - **Matches your system theme** automatically, light or OLED black.
 - **Fully keyboard-driven window**, plus a proper command line with `--json` on everything
   that reports something — script it however you like.
+
+![A destination that has gone away, still listed and ready to resume](screenshots/gui-away.png)
 
 ## Getting it installed
 
