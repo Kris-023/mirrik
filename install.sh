@@ -356,8 +356,8 @@ if [ -z "$source_dir" ]; then
         dim '  minutes and needs an internet connection for the dependencies.'
 
         # Read from the workspace itself rather than duplicated here - measured with
-        # `cargo msrv`; a copy in this script would drift the
-        # moment either the toolchain or the dependencies move. Missing either number
+        # `cargo msrv`; a copy in this script would drift the moment either the
+        # toolchain or the dependencies move. Missing either number
         # (older Cargo.toml, `cargo --version` failing) just skips the check silently -
         # nothing here is worth blocking an install over.
         cargo_version="$(cargo --version 2>/dev/null | grep -oE '[0-9]+(\.[0-9]+)+' | head -n1 || true)"

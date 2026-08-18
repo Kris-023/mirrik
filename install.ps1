@@ -396,8 +396,8 @@ if (-not $source) {
         Say '  the first time and needs an internet connection for the dependencies.' DarkGray
 
         # Read from the workspace itself rather than duplicated here - measured with
-        # `cargo msrv`; a copy would drift the moment either the
-        # toolchain or the dependencies move. Either regex failing to match just skips the
+        # `cargo msrv`; a copy would drift the moment either the toolchain or the
+        # dependencies move. Either regex failing to match just skips the
         # check silently - nothing here is worth blocking an install over.
         $buildDefault = $true
         $cargoVerText = (cargo --version 2>$null) -join ' '

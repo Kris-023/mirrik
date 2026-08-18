@@ -11,11 +11,10 @@
     die auf Windows-only-APIs sitzen (Registry, COM, user32-P/Invoke, CIM), durch
     dateibasierte Attrappen; alles andere in install.ps1 laeuft echt.
 
-    Deckt nur ab, was ohne echtes Windows ueberhaupt erreichbar ist - siehe
-    the maintainer's private notes fuer die genaue Abgrenzung (die dort
-    behauptete Faustregel war "grob 30 von 35"; was hier tatsaechlich steht, ist weniger,
-    weil zwei Vorpruefungen an statischen .NET-Eigenschaften haengen, die sich auch mit
-    Function-Shadowing nicht ersetzen lassen - Details in der .md).
+    Deckt nur ab, was ohne echtes Windows ueberhaupt erreichbar ist: rund 30 der 35 bekannten
+    Fallgruppen. Der Rest bleibt aus, weil zwei Vorpruefungen an statischen .NET-Eigenschaften
+    haengen, die sich auch mit Function-Shadowing nicht ersetzen lassen, und weil echte
+    Wirkung (Verknuepfung, Registry-PATH, gesperrte .exe) nur echtes Windows zeigen kann.
 
 .PARAMETER Filter
     Nur Faelle ausfuehren, deren Name diesen Text enthaelt.
