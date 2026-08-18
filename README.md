@@ -97,6 +97,13 @@ automates that for you and checks the usual gotchas first.
 Take the script unless you have a reason not to. It's the easier path, and it's the one
 that's actually been run and battle-tested.
 
+Grab the source first, if you don't have it already:
+
+```sh
+git clone https://github.com/Kris-023/mirrik.git
+cd mirrik
+```
+
 ### Windows
 
 ```powershell
@@ -331,3 +338,8 @@ The window's typeface is set in [Archivo](https://github.com/Omnibus-Type/Archiv
 [JetBrains Mono](https://github.com/JetBrains/JetBrainsMono), both licensed separately under
 the SIL Open Font License. That license applies only to the two font files, not to the rest
 of the project, and its full text ships alongside the fonts in `gui/assets/`.
+
+"Mirrik" is a made-up word, chosen specifically because it wasn't already in use anywhere
+that matters — no company, product, or package by that name on any registry checked before
+picking it. This project has no connection to anything else you might find under a similar
+name.
