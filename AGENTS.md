@@ -45,6 +45,24 @@ working notes, excluded via `.gitignore`. It will not be present in a clone or a
 can see, and nothing in it should be assumed, referenced, or recreated — if you need context
 this file doesn't have, ask rather than guess.
 
+### Where a change actually goes
+
+| Task | Crate / file |
+|---|---|
+| New CLI subcommand or flag | `crates/cli/src/main.rs` |
+| New behaviour a platform must answer (a capability, a hint, anything `MirrorBackend` exposes) | the trait itself in `crates/core/src/lib.rs`, then implement it in **both** `backend-linux` and `backend-windows` |
+| Shared logic that isn't platform-specific (device matching, volume math, state file) | `crates/core/src/` |
+| Window layout, keyboard focus, what's drawn | `crates/gui/src/main.rs` |
+| Colours, fonts, the two skins | `crates/gui/src/theme.rs` |
+| PipeWire-specific behaviour | `crates/backend-linux/src/lib.rs` |
+| WASAPI-specific behaviour | `crates/backend-windows/src/lib.rs` |
+| Linux install/uninstall flow | `install.sh`, tested by `tools/test-install.sh` |
+| Windows install/uninstall flow | `install.ps1`, tested by `tools/test-install.ps1` |
+
+If a change seems to need the GUI to check which OS it's running on, that's usually a sign
+the trait is missing something — see "The `MirrorBackend` trait is the platform boundary"
+below, before adding an `#[cfg(...)]` in `crates/gui`.
+
 ## Building and testing
 
 ```sh
@@ -54,6 +72,19 @@ cargo build --release
 works unmodified on a fresh clone, on either platform — the workspace's `default-members`
 keeps the *other* platform's backend out of a bare build (mixing them fails: `backend-windows`
 needs `windows-future`, which doesn't compile outside Windows).
+
+To see or use the window while working on it:
+
+```sh
+cargo run -p mirrik-gui
+```
+
+For the command line, `cargo run -p mirrik-cli -- devices` (or `on`/`off`/`status`/...) works
+the same way and is usually faster to iterate on than the GUI.
+
+This is an application, not a library — **`Cargo.lock` is committed and stays that way**, so
+a build reproduces the exact dependency versions it was tested against instead of whatever
+the registry currently resolves to. Don't add it to `.gitignore`.
 
 Testing needs the crates named explicitly, for the same reason:
 
