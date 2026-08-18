@@ -588,7 +588,7 @@ impl MirrorBackend for PipeWireBackend {
             changes_default_device: false,
             moves_streams: false,
             // Capture and playback each run one graph cycle behind, so two quanta.
-            // Computed, never hardcoded: at quantum 256 this is 10 ms, at 1024 it is 43.
+            // Computed, never hardcoded: at quantum 256 this is 10 ms, at 1024 it is 42.
             base_latency_ms: (2000 * self.quantum / self.rate.max(1)).max(1),
             max_targets: 0,
         })
