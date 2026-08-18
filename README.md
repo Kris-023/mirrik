@@ -215,6 +215,9 @@ install -Dm755 target/release/mirrik     ~/.local/bin/mirrik
 install -Dm755 target/release/mirrik-gui ~/.local/bin/mirrik-gui
 ```
 
+Needs Rust 1.95 or newer (`rustup update` if you're not sure) — that floor comes from
+`egui`/`eframe`, not from anything Mirrik itself does.
+
 Then bind the window to a key — that's really the intended way to use this thing day to
 day. Hyprland, as an example:
 

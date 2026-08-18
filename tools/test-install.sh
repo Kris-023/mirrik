@@ -109,9 +109,16 @@ EOF
     fi
 
     if [[ "$missing" != *" cargo "* ]]; then
-        cat > "$d/cargo" <<'EOF'
+        # Reports a made-up version on `--version` when a case asks for one (the MSRV
+        # check reads exactly this output), and otherwise just logs the call like the
+        # other package-manager stubs.
+        cat > "$d/cargo" <<EOF
 #!/usr/bin/env bash
-printf 'cargo %s\n' "$*" >> "$STUB_LOG"
+if [ "\${1:-}" = --version ] && [ -n "${STUB_CARGO_VERSION:-}" ]; then
+    printf 'cargo %s (0000000000 2026-01-01)\n' "${STUB_CARGO_VERSION:-}"
+    exit 0
+fi
+printf 'cargo %s\n' "\$*" >> "\$STUB_LOG"
 exit 0
 EOF
     fi
@@ -120,11 +127,12 @@ EOF
 }
 
 # opts: cfg= pre=none|empty|marker server= missing=a,b lua=1 nobins=1 nopath=1 repeat=N
+#       hyprversion= preinstalled= cargoversion=
 run_case() {  # <name> <antworten> <pruef-funktion> [opts]
     local name="$1" answers="$2" check="$3" opts="${4:-}"
     local cfg='' pre='empty' server='PulseAudio (on PipeWire 1.6.8)'
     local missing='' lua='' nobins='' nopath='' repeat=1 pair kv
-    local osrelease='' shell_for_case='' hyprversion='' preinstalled=''
+    local osrelease='' shell_for_case='' hyprversion='' preinstalled='' cargoversion=''
     IFS=';' read -ra kv <<<"$opts"
     for pair in "${kv[@]}"; do
         [ -z "$pair" ] && continue
@@ -134,13 +142,15 @@ run_case() {  # <name> <antworten> <pruef-funktion> [opts]
             lua) lua=1 ;; nobins) nobins=1 ;; nopath) nopath=1 ;; repeat) repeat="${pair#*=}" ;;
             osrelease) osrelease="${pair#*=}" ;; shell) shell_for_case="${pair#*=}" ;;
             hyprversion) hyprversion="${pair#*=}" ;; preinstalled) preinstalled="${pair#*=}" ;;
+            cargoversion) cargoversion="${pair#*=}" ;;
         esac
     done
 
     local home; home="$(mktemp -d)"
     local stubs="$home/stubs"
     mkdir -p "$home/.config" "$home/.local/bin" "$home/.local/share/applications"
-    STUB_HYPR_VERSION="$hyprversion" make_stubs "$stubs" "$server" ${missing//,/ }
+    STUB_HYPR_VERSION="$hyprversion" STUB_CARGO_VERSION="$cargoversion" \
+        make_stubs "$stubs" "$server" ${missing//,/ }
 
     if [ -n "$cfg" ] && [ "$pre" != none ]; then
         mkdir -p "$home/$(dirname "$cfg")"
@@ -295,6 +305,18 @@ check_abort() {
     [ "$RC" = 0 ] && echo "Exit-Code 0, obwohl Abbruch erwartet war"
     [ -e "$HOME_UNDER_TEST/.local/bin/mirrik" ] && echo "trotz Abbruch installiert"
     return 0
+}
+check_msrv_warned_default_no() {   # zu alte Toolchain: Warnung, "Build them now?" faellt auf n
+    canary_clean
+    grep -q 'One thing first' <<<"$OUT" || echo "keine MSRV-Warnung"
+    grep -q 'eframe and egui set that floor' <<<"$OUT" || echo "keine Begruendung fuer die MSRV"
+    grep -q 'rustup update' <<<"$OUT" || echo "kein Hinweis auf rustup update"
+    check_abort
+}
+check_msrv_silent_when_fine() {   # ausreichende Toolchain: keine Warnung, normaler Abbruch bei n
+    canary_clean
+    grep -q 'One thing first' <<<"$OUT" && echo "MSRV-Warnung trotz ausreichender Version"
+    check_abort
 }
 check_pathline() {
     installed_ok; has_desktop
@@ -588,6 +610,9 @@ CASES=(
   "distro-nixos|y,,y,1,2,a,1,y|check_nixos_hint|missing=pw-cli;osrelease=nixos;cfg=.config/hypr/hyprland.conf"
   "ohne-binaries-ohne-cargo||check_abort|nobins=1;missing=cargo"
   "ohne-binaries-bau-abgelehnt|n|check_abort|nobins=1"
+  # --- MSRV: gelesen aus der Cargo.toml der echten Kopie, nicht dupliziert im Testfall
+  "msrv-zu-alt-default-nein||check_msrv_warned_default_no|nobins=1;cargoversion=1.70.0"
+  "msrv-ausreichend-still|n|check_msrv_silent_when_fine|nobins=1;cargoversion=2.0.0"
   # --- Missbrauch: Shell-Metazeichen in den beiden freien Textfeldern
   "injektion-taste|,y,1,2,a\";touch /tmp/mirrik-pwned;#,a,1,y|check_injection|cfg=.config/hypr/hyprland.conf"
   "injektion-bindir|/tmp/x\";touch /tmp/mirrik-pwned2;#,y,1,2,a,2|check_injection|cfg=.config/hypr/hyprland.conf"

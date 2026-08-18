@@ -394,7 +394,34 @@ if (-not $source) {
     if (Get-Command cargo -ErrorAction SilentlyContinue) {
         Say '  Rust is installed, so they can be built now. This takes a few minutes' DarkGray
         Say '  the first time and needs an internet connection for the dependencies.' DarkGray
-        if (-not (Confirm '  Build them now?')) {
+
+        # Read from the workspace itself rather than duplicated here - measured with
+        # `cargo msrv`; a copy would drift the moment either the
+        # toolchain or the dependencies move. Either regex failing to match just skips the
+        # check silently - nothing here is worth blocking an install over.
+        $buildDefault = $true
+        $cargoVerText = (cargo --version 2>$null) -join ' '
+        $msrvText = Get-Content (Join-Path $root 'Cargo.toml') -ErrorAction SilentlyContinue |
+            Where-Object { $_ -match '^\s*rust-version\s*=' } | Select-Object -First 1
+        $cargoMatch = [regex]::Match($cargoVerText, '\d+\.\d+(\.\d+)?')
+        $msrvMatch = [regex]::Match($msrvText, '\d+\.\d+(\.\d+)?')
+        if ($cargoMatch.Success -and $msrvMatch.Success) {
+            $cargoVer = [version]$cargoMatch.Value
+            $msrvVer = [version]$msrvMatch.Value
+            if ($cargoVer -lt $msrvVer) {
+                Say ''
+                Say "  One thing first: Rust $cargoVer is installed, but Mirrik needs" Yellow
+                Say "  $msrvVer or newer - eframe and egui set that floor. Building with an" Yellow
+                Say '  older toolchain does not fail with a message about Rust being too old;' Yellow
+                Say '  it fails with compiler errors from crates that have nothing to do with' Yellow
+                Say '  Mirrik itself.' Yellow
+                Say '  rustup update gets you there, or whatever your package manager uses.' DarkGray
+                Say ''
+                $buildDefault = $false
+            }
+        }
+
+        if (-not (Confirm '  Build them now?' $buildDefault)) {
             Say '  Nothing was changed. Build them yourself with:' DarkGray
             Say '    cargo build --release -p mirrik-cli -p mirrik-gui' Gray
             exit 1

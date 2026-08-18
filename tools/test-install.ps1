@@ -69,7 +69,7 @@ exit 0
     & chmod +x $path
 }
 
-function New-StubCargo([string]$dir, [string]$logFile, [switch]$Fails) {
+function New-StubCargo([string]$dir, [string]$logFile, [switch]$Fails, [string]$Version = '1.99.0') {
     $path = Join-Path $dir 'cargo'
     $fakeMirrik = if ($Fails) { '' } else {
 @'
@@ -87,8 +87,16 @@ chmod +x target/release/mirrik.exe target/release/mirrik-gui.exe
 '@
     }
     $exitLine = if ($Fails) { 'exit 1' } else { 'exit 0' }
+    # `--version` is handled first and returns immediately - real `cargo --version` has no
+    # side effects, and this stub must not either. Without this branch, install.ps1's MSRV
+    # check (which shells out to `cargo --version`) would trigger the fake-build lines
+    # below just by asking, before "Build them now?" is even shown.
     @"
 #!/usr/bin/env bash
+if [ "`$1" = "--version" ]; then
+    printf 'cargo $Version (0000000000 2026-01-01)\n'
+    exit 0
+fi
 printf 'cargo %s\n' "`$*" >> "$logFile"
 $fakeMirrik
 $exitLine
@@ -117,7 +125,8 @@ function Invoke-Case {
         [hashtable]$PreShortcuts = @{},
         [string]$PrePath = '',
         [string]$StrayMirrikDir = '',
-        [switch]$RawAnswers
+        [switch]$RawAnswers,
+        [string]$CargoVersion = '1.99.0'
     )
     if ($Filter -and $Name -notlike "*$Filter*") { return }
 
@@ -148,12 +157,15 @@ function Invoke-Case {
     }
 
     Copy-Item $Installer (Join-Path $fakeRoot 'install.ps1')
+    # Just enough of the real Cargo.toml for the MSRV check to read the same line it would
+    # in the real repository - the rest of the workspace manifest is irrelevant here.
+    "[workspace.package]`nrust-version = `"1.95`"`n" | Set-Content -Path (Join-Path $fakeRoot 'Cargo.toml') -NoNewline
 
     if (-not $NoBinaries) {
         New-StubBinary (Join-Path $fakeRoot 'mirrik.exe') '0.1.0'
         New-StubBinary (Join-Path $fakeRoot 'mirrik-gui.exe') '0.1.0'
     }
-    if (-not $NoCargo) { New-StubCargo -dir $fakeBin -logFile $logFile -Fails:$CargoFails }
+    if (-not $NoCargo) { New-StubCargo -dir $fakeBin -logFile $logFile -Fails:$CargoFails -Version $CargoVersion }
 
     if ($Preinstalled) {
         $existingDir = Join-Path $localAppdata 'Programs\Mirrik'
@@ -418,6 +430,23 @@ Invoke-Case -Name 'bau-fehlt-mit-cargo-abgelehnt' -NoBinaries -Answers @('n') -C
     $p = @()
     if ($ctx.ExitCode -eq 0) { $p += 'Exit-Code 0, obwohl abgebrochen werden sollte' }
     if ($ctx.Out -notmatch 'cargo build --release -p mirrik-cli -p mirrik-gui') { $p += 'kein Hinweis, wie man selbst baut' }
+    return $p
+}
+
+Invoke-Case -Name 'msrv-zu-alt-default-nein' -NoBinaries -CargoVersion '1.70.0' -Answers @('') -Check {
+    param($ctx)
+    $p = @()
+    if ($ctx.ExitCode -eq 0) { $p += 'Exit-Code 0, obwohl abgebrochen werden sollte' }
+    if ($ctx.Out -notmatch 'One thing first') { $p += 'keine MSRV-Warnung' }
+    if ($ctx.Out -notmatch 'rustup update') { $p += 'kein Hinweis auf rustup update' }
+    return $p
+}
+
+Invoke-Case -Name 'msrv-ausreichend-still' -NoBinaries -CargoVersion '2.0.0' -Answers @('n') -Check {
+    param($ctx)
+    $p = @()
+    if ($ctx.ExitCode -eq 0) { $p += 'Exit-Code 0, obwohl abgebrochen werden sollte' }
+    if ($ctx.Out -match 'One thing first') { $p += 'MSRV-Warnung trotz ausreichender Version' }
     return $p
 }
 

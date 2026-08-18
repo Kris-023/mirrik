@@ -354,11 +354,31 @@ if [ -z "$source_dir" ]; then
     if have cargo; then
         dim '  Rust is installed, so they can be built now. The first build takes a few'
         dim '  minutes and needs an internet connection for the dependencies.'
+
+        # Read from the workspace itself rather than duplicated here - measured with
+        # `cargo msrv`; a copy in this script would drift the
+        # moment either the toolchain or the dependencies move. Missing either number
+        # (older Cargo.toml, `cargo --version` failing) just skips the check silently -
+        # nothing here is worth blocking an install over.
+        cargo_version="$(cargo --version 2>/dev/null | grep -oE '[0-9]+(\.[0-9]+)+' | head -n1 || true)"
+        msrv="$(grep -m1 '^rust-version' "$here/Cargo.toml" | grep -oE '[0-9]+(\.[0-9]+)+' || true)"
+        build_default=y
+        if [ -n "$cargo_version" ] && [ -n "$msrv" ] && ! version_ge "$cargo_version" "$msrv"; then
+            say ''
+            warn "  One thing first: Rust $cargo_version is installed, but Mirrik needs"
+            warn "  $msrv or newer - eframe and egui set that floor. Building with an older"
+            warn '  toolchain does not fail with a message about Rust being too old; it fails'
+            warn '  with compiler errors from crates that have nothing to do with Mirrik.'
+            dim '  `rustup update` gets you there, or your package manager'"'"'s usual upgrade path.'
+            say ''
+            build_default=n
+        fi
+
         # -p even though the workspace's default-members already exclude the foreign
         # backend: this way the build does not silently depend on a setting in a file the
         # installer never reads. Without either, cargo would build backend-windows here
         # and stop with 16 errors from `windows-future`.
-        if confirm '  Build them now?'; then
+        if confirm '  Build them now?' "$build_default"; then
             cargo build --release --manifest-path "$here/Cargo.toml" \
                         -p mirrik-cli -p mirrik-gui
             source_dir="$here/target/release"
