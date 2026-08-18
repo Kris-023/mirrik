@@ -104,6 +104,33 @@ append_block() {  # append_block <file> <block> <what to say afterwards>
     dim "  To undo: delete the block between the two '# --- Mirrik ---' lines."
 }
 
+# ---------------------------------------------------------------- state from earlier runs
+#
+# A small file remembers what a previous run actually wrote, so the closing "to undo"
+# list can name exactly what is there instead of a generic guess - and so it can flag
+# what a *different* earlier choice (a different compositor, a different install
+# directory) left behind. This is read-only here: nothing is deleted or changed on the
+# strength of it, the values only ever end up printed for the person running this
+# script - same rule as every other destructive step in this file.
+state_dir="${XDG_STATE_HOME:-$HOME/.local/state}/mirrik"
+statefile="$state_dir/install-state"
+MIRRIK_STATE_WM=''; MIRRIK_STATE_BINDIR=''; MIRRIK_STATE_APPS=''
+MIRRIK_STATE_PATH_RC=''; MIRRIK_STATE_CONFIG=''; MIRRIK_STATE_KEYBIND_KIND=''
+# shellcheck disable=SC1090
+[ -r "$statefile" ] && . "$statefile"
+
+write_state() {  # persists this run's outcome, overwriting whatever was read above
+    mkdir -p "$state_dir"
+    {
+        printf 'MIRRIK_STATE_WM=%q\n' "$state_wm"
+        printf 'MIRRIK_STATE_BINDIR=%q\n' "$bindir"
+        printf 'MIRRIK_STATE_APPS=%q\n' "$state_apps"
+        printf 'MIRRIK_STATE_PATH_RC=%q\n' "$path_rc"
+        printf 'MIRRIK_STATE_CONFIG=%q\n' "$state_config"
+        printf 'MIRRIK_STATE_KEYBIND_KIND=%q\n' "$state_keybind_kind"
+    } > "$statefile"
+}
+
 # ---------------------------------------------------------------- 0. what this is
 
 cat <<'BANNER'
@@ -501,6 +528,11 @@ wm="$(choose '  Choice' "$guess" 1 2 3 4 5 6 7 8 9 10 11 12 13)"
 if [ "$wm" = 13 ]; then
     dim '  Skipped. The command to bind, whenever you get to it, is:'
     say "    $bindir/mirrik-gui"
+    # No opinion this run - carry forward whatever an earlier run already knew, rather
+    # than reading "skipped" as "nothing configured" and flagging a still-correct setup
+    # as left over from a different, earlier choice.
+    state_wm="$MIRRIK_STATE_WM"; state_config="$MIRRIK_STATE_CONFIG"
+    state_keybind_kind="$MIRRIK_STATE_KEYBIND_KIND"
 else
     say ''
     say '  Which modifiers?'
@@ -534,7 +566,7 @@ else
 
     gui="$bindir/mirrik-gui"
     conf_home="${XDG_CONFIG_HOME:-$HOME/.config}"
-    snippet=''; config=''; note=''
+    snippet=''; config=''; note=''; state_keybind_kind=''
 
     case "$wm" in
         1)
@@ -636,6 +668,7 @@ $MARK_CLOSE"
             dim '  the fiddly part, because that list must not be overwritten.'
             say ''
             if have gsettings && confirm '  Do all of that now?'; then
+                state_keybind_kind=gnome
                 gsettings set "$schema:$path" name 'Mirrik'
                 gsettings set "$schema:$path" command "$gui"
                 gsettings set "$schema:$path" binding "$gtk$lower"
@@ -713,6 +746,7 @@ $MARK_CLOSE"
                 say "    gsettings set $target binding \"['$gtk$lower']\""
                 say ''
                 if confirm '  Do that now?'; then
+                    state_keybind_kind=cinnamon
                     gsettings set "$target" name 'Mirrik'
                     gsettings set "$target" command "$gui"
                     gsettings set "$target" binding "['$gtk$lower']"
@@ -753,6 +787,7 @@ $MARK_CLOSE"
             say "      -p '/commands/custom/$gtk$lower' -n -t string -s '$gui'"
             say ''
             if have xfconf-query && confirm '  Run it now?'; then
+                state_keybind_kind=xfce
                 xfconf-query -c xfce4-keyboard-shortcuts \
                     -p "/commands/custom/$gtk$lower" -n -t string -s "$gui"
                 ok "  Done. $human+$upper opens the window."
@@ -825,6 +860,22 @@ $MARK_CLOSE"
             dim '  Nothing written. The lines are above whenever you want them.'
         fi
     fi
+
+    # Ground truth, not "did this run write it": a block left by an earlier run counts
+    # the same as one written just now, and a block that was declined here but already
+    # exists (re-run, "print only" chosen the second time) must not disappear from the
+    # undo list either. wm 1-7 are the config-snippet desktops; 8/9/11 set
+    # state_keybind_kind themselves, above, only once their write actually ran.
+    state_wm="$wm"; state_config=''
+    if [ -n "${config:-}" ] && [ -f "$config" ] && grep -qFe "$MARK_TEXT" "$config"; then
+        state_config="$config"
+    fi
+    # Same desktop as last time, but its tool-based step was declined or is manual-only
+    # (KDE, "something else"): keep what was already known rather than reading silence
+    # as "nothing configured".
+    if [ "$wm" = "$MIRRIK_STATE_WM" ] && [ -z "$state_keybind_kind" ]; then
+        state_keybind_kind="$MIRRIK_STATE_KEYBIND_KIND"
+    fi
 fi
 
 # ---------------------------------------------------------------- 6. does it work
@@ -859,13 +910,73 @@ dim '  Open the window        your key combination, or the launcher entry'
 dim '  From a terminal        mirrik devices / mirrik on <name> / mirrik off'
 dim '  Closing the window     leaves the mirror running. `x` stops it.'
 say ''
+
+# Ground truth for the desktop entry too, same reasoning as state_config above: present
+# on disk counts, regardless of whether this run wrote it or an earlier one did.
+state_apps=''
+[ -f "$apps/mirrik.desktop" ] && state_apps="$apps"
+
+write_state
+
 dim '  To undo all of this:'
 say "    rm $bindir/mirrik $bindir/mirrik-gui"
-say "    rm $apps/mirrik.desktop"
-dim "    and delete the '# --- Mirrik ---' block from your compositor config"
-# Named only when a block is actually there - listing a file nobody touched invites
-# someone to go looking for a line that was never written.
+# Each of the next lines is named only when it is actually there - listing something
+# nobody touched invites someone to go looking for a file or a block that never
+# existed.
+if [ -n "$state_apps" ]; then
+    say "    rm $state_apps/mirrik.desktop"
+fi
+if [ -n "$state_config" ]; then
+    dim "    and delete the '# --- Mirrik ---' block from $state_config"
+fi
 if [ -n "$path_rc" ]; then
     dim "    and the same block from $path_rc (the PATH line)"
+fi
+case "$state_keybind_kind" in
+    gnome)    dim '    and remove "Mirrik" under Settings > Keyboard > Custom Shortcuts' ;;
+    cinnamon) dim '    and remove "Mirrik" under Keyboard > Shortcuts > Custom Shortcuts' ;;
+    xfce)     dim '    and remove it under Settings > Keyboard > Application Shortcuts' ;;
+esac
+say "    rm -r $state_dir"
+
+# Anything a *different* earlier run left behind - a different install directory, a
+# different compositor or desktop. Compared by what actually changed (bindir, apps
+# directory, the chosen desktop) rather than by re-deriving strings, and re-checked on
+# disk before being named, so nothing here is claimed on trust alone: someone who
+# already cleaned it up by hand does not get told to clean it up again.
+stale=0
+note_stale() {
+    [ "$stale" = 1 ] && return 0
+    say ''
+    dim '  Also still there from an earlier run with different settings:'
+    stale=1
+}
+if [ -n "$MIRRIK_STATE_BINDIR" ] && [ "$MIRRIK_STATE_BINDIR" != "$bindir" ] \
+   && [ -x "$MIRRIK_STATE_BINDIR/mirrik" ]; then
+    note_stale
+    say "    rm $MIRRIK_STATE_BINDIR/mirrik $MIRRIK_STATE_BINDIR/mirrik-gui"
+fi
+if [ -n "$MIRRIK_STATE_APPS" ] && [ "$MIRRIK_STATE_APPS" != "$state_apps" ] \
+   && [ -f "$MIRRIK_STATE_APPS/mirrik.desktop" ]; then
+    note_stale
+    say "    rm $MIRRIK_STATE_APPS/mirrik.desktop"
+fi
+if [ -n "$MIRRIK_STATE_WM" ] && [ "$MIRRIK_STATE_WM" != "$state_wm" ]; then
+    if [ -n "$MIRRIK_STATE_CONFIG" ] && [ -f "$MIRRIK_STATE_CONFIG" ] \
+       && grep -qFe "$MARK_TEXT" "$MIRRIK_STATE_CONFIG"; then
+        note_stale
+        dim "    delete the '# --- Mirrik ---' block from $MIRRIK_STATE_CONFIG"
+    fi
+    case "$MIRRIK_STATE_KEYBIND_KIND" in
+        gnome)
+            note_stale
+            dim '    remove "Mirrik" under Settings > Keyboard > Custom Shortcuts (if still on GNOME)' ;;
+        cinnamon)
+            note_stale
+            dim '    remove "Mirrik" under Keyboard > Shortcuts > Custom Shortcuts (if still on Cinnamon)' ;;
+        xfce)
+            note_stale
+            dim '    remove it under Settings > Keyboard > Application Shortcuts (if still on XFCE)' ;;
+    esac
 fi
 say ''

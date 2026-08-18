@@ -9,7 +9,7 @@ WMS=(
   "1:.config/hypr/hyprland.conf:snippet"
   "2:.config/sway/config:snippet"
   "3:.config/i3/config:snippet"
-  "4:.config/niri/config.kdl:snippet-nur-drucken"
+  "4:.config/niri/config.kdl:snippet-niri"
   "5:.config/river/init:snippet"
   "6:.config/awesome/rc.lua:snippet"
   "7:.config/sxhkd/sxhkdrc:snippet"
@@ -28,8 +28,10 @@ for entry in "${WMS[@]}"; do
             snippet)
                 echo "matrix-wm${wm}-mods${mods}-append|,y,$wm,$mods,a,1,y|check_appended|cfg=$cfg"
                 echo "matrix-wm${wm}-mods${mods}-print|,y,$wm,$mods,a,2|check_printed|cfg=$cfg" ;;
-            snippet-nur-drucken)
-                echo "matrix-wm${wm}-mods${mods}-print|,y,$wm,$mods,a,2|check_printed|cfg=$cfg" ;;
+            snippet-niri)
+                # niri hat keine Marker (ein einzelner binds-Block) - eigene Pruef-
+                # funktion, siehe die Notiz bei check_printed_niri in test-install.sh.
+                echo "matrix-wm${wm}-mods${mods}-print|,y,$wm,$mods,a,2|check_printed_niri|cfg=$cfg" ;;
             werkzeug)
                 echo "matrix-wm${wm}-mods${mods}-ja|,y,$wm,$mods,a,y|check_tool_called|"
                 echo "matrix-wm${wm}-mods${mods}-nein|,y,$wm,$mods,a,n|check_manual_hint|" ;;

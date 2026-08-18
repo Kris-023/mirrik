@@ -1,3 +1,4 @@
+# erzeugt 2026-08-18 03:58 — Compositor x Modifier x Config-Weg
 matrix-wm1-mods1-append|,y,1,1,a,1,y|check_appended|cfg=.config/hypr/hyprland.conf
 matrix-wm1-mods1-print|,y,1,1,a,2|check_printed|cfg=.config/hypr/hyprland.conf
 matrix-wm1-mods2-append|,y,1,2,a,1,y|check_appended|cfg=.config/hypr/hyprland.conf
@@ -22,10 +23,10 @@ matrix-wm3-mods3-append|,y,3,3,a,1,y|check_appended|cfg=.config/i3/config
 matrix-wm3-mods3-print|,y,3,3,a,2|check_printed|cfg=.config/i3/config
 matrix-wm3-mods4-append|,y,3,4,a,1,y|check_appended|cfg=.config/i3/config
 matrix-wm3-mods4-print|,y,3,4,a,2|check_printed|cfg=.config/i3/config
-matrix-wm4-mods1-print|,y,4,1,a,2|check_printed|cfg=.config/niri/config.kdl
-matrix-wm4-mods2-print|,y,4,2,a,2|check_printed|cfg=.config/niri/config.kdl
-matrix-wm4-mods3-print|,y,4,3,a,2|check_printed|cfg=.config/niri/config.kdl
-matrix-wm4-mods4-print|,y,4,4,a,2|check_printed|cfg=.config/niri/config.kdl
+matrix-wm4-mods1-print|,y,4,1,a,2|check_printed_niri|cfg=.config/niri/config.kdl
+matrix-wm4-mods2-print|,y,4,2,a,2|check_printed_niri|cfg=.config/niri/config.kdl
+matrix-wm4-mods3-print|,y,4,3,a,2|check_printed_niri|cfg=.config/niri/config.kdl
+matrix-wm4-mods4-print|,y,4,4,a,2|check_printed_niri|cfg=.config/niri/config.kdl
 matrix-wm5-mods1-append|,y,5,1,a,1,y|check_appended|cfg=.config/river/init
 matrix-wm5-mods1-print|,y,5,1,a,2|check_printed|cfg=.config/river/init
 matrix-wm5-mods2-append|,y,5,2,a,1,y|check_appended|cfg=.config/river/init

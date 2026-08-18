@@ -223,6 +223,18 @@ check_printed() {
     grep -q -- '--- Mirrik ---' <<<"$OUT" || echo "die Zeilen wurden nicht gedruckt"
     return 0
 }
+# niri hat keine Marker (ein einzelner binds-Block, siehe die Notiz im Installer) - der
+# generische check_printed griff hier frueher nur zufaellig, weil die alte, unbedingte
+# Zeile im Abschluss-Block selbst "--- Mirrik ---" enthielt. Seit die Zeile nur noch
+# erscheint, wenn wirklich ein Block existiert, prueft dieser eigene Fall den tatsaechlichen
+# Inhalt (die binds-Zeile) statt eines Textes, der bei niri nie vorkommt.
+check_printed_niri() {
+    installed_ok; has_desktop
+    local f="$HOME_UNDER_TEST/$CFG"
+    [ -e "$f" ] && grep -q 'binds {' "$f" && echo "$CFG wurde trotz niri-Sonderfall automatisch beschrieben"
+    grep -q 'binds {' <<<"$OUT" || echo "die niri-Bind-Zeilen wurden nicht gedruckt"
+    return 0
+}
 check_untouched() {
     installed_ok; has_desktop
     local f="$HOME_UNDER_TEST/$CFG"
@@ -246,6 +258,28 @@ check_gsettings() {
 check_xfconf() {
     installed_ok; has_desktop
     grep -q xfconf-query "$STUBLOG" 2>/dev/null || echo "xfconf-query wurde nicht aufgerufen"
+}
+check_state_written() {   # die Zustandsdatei traegt die richtigen Werte fuer einen Block-Fall
+    check_appended
+    local f="$HOME_UNDER_TEST/.local/state/mirrik/install-state"
+    [ -f "$f" ] || { echo "Zustandsdatei wurde nicht geschrieben"; return 0; }
+    grep -qF 'MIRRIK_STATE_WM=1' "$f" || echo "wm nicht im Zustand vermerkt"
+    grep -qF "MIRRIK_STATE_BINDIR=$HOME_UNDER_TEST/.local/bin" "$f" || echo "bindir nicht im Zustand vermerkt"
+    grep -qF "MIRRIK_STATE_CONFIG=$HOME_UNDER_TEST/$CFG" "$f" || echo "config-Pfad nicht im Zustand vermerkt"
+    grep -qF 'MIRRIK_STATE_APPS=' "$f" || echo "apps-Verzeichnis fehlt als Schluessel im Zustand"
+    grep -qF '.local/state/mirrik' <<<"$OUT" || echo "die Zustandsdatei wird im Abschluss-Block nicht genannt"
+}
+check_state_gnome() {   # die Zustandsdatei traegt keybind_kind=gnome, kein Block-Pfad
+    check_gsettings
+    local f="$HOME_UNDER_TEST/.local/state/mirrik/install-state"
+    [ -f "$f" ] || { echo "Zustandsdatei wurde nicht geschrieben"; return 0; }
+    grep -qF 'MIRRIK_STATE_KEYBIND_KIND=gnome' "$f" || echo "keybind_kind=gnome nicht im Zustand vermerkt"
+    # printf '%q' schreibt einen leeren Wert als zwei Anfuehrungszeichen, nicht als
+    # nichts - deshalb hier gegen '' geprueft und nicht gegen eine leere Zeile.
+    grep -qx "MIRRIK_STATE_CONFIG=''" "$f" \
+        || echo "config-Pfad ist nicht leer, obwohl GNOME kein Config-Snippet schreibt"
+    grep -q 'and remove "Mirrik" under Settings > Keyboard > Custom Shortcuts$' <<<"$OUT" \
+        || echo "der GNOME-Rueckbauhinweis fehlt im Abschluss-Block"
 }
 check_manual_hint() { installed_ok; has_desktop; }
 check_tool_called() {   # GNOME/Cinnamon/XFCE setzen das Kuerzel ueber ein Werkzeug
@@ -369,6 +403,129 @@ check_eof() {   # stdin endet mitten in den Fragen
     return 0
 }
 
+# --- Die Zustandsdatei ueber zwei Laeufe hinweg ----------------------------------
+#
+# Kein einzelner Lauf kann zeigen, ob der Abschluss-Block einen zweiten Lauf mit
+# anderen Antworten richtig behandelt - dafuer braucht es zwei Aufrufe des Installers
+# im selben Test-Home. run_case ist auf genau einen Aufruf gebaut, deshalb hier eine
+# eigene, kleinere Fassung derselben Idee statt run_case zu verbiegen.
+run_installer_once() {  # <home> <path> <antworten>
+    local home="$1" path="$2" answers="$3"
+    printf '%s\n' "$(printf '%s' "$answers" | tr ',' '\n')" | env -i \
+        HOME="$home" PATH="$path" \
+        XDG_CONFIG_HOME="$home/.config" XDG_DATA_HOME="$home/.local/share" \
+        STUB_LOG="$home/stub.log" SHELL=/bin/bash TERM=dumb \
+        bash "$INSTALLER" 2>&1
+}
+
+report_case() {  # <name> <problems...>
+    local name="$1"; shift
+    if [ "$#" -eq 0 ]; then
+        printf '  %s✓%s %s\n' "$green" "$off" "$name"; pass=$((pass + 1))
+    else
+        printf '  %s✗%s %s\n' "$red" "$off" "$name"
+        printf '      %s\n' "$@"
+        fail=$((fail + 1)); failed_names+=("$name")
+    fi
+}
+
+# Ein zweites bin-Verzeichnis, von Anfang an im PATH - sonst zieht ein Wechsel des
+# Zielordners im zweiten Lauf zusaetzlich die "nicht im PATH"-Frage nach sich und
+# verschiebt jede folgende Antwort um eins.
+setup_two_phase_home() {  # -> druckt "<home> <path>" auf stdout
+    local home; home="$(mktemp -d)"
+    mkdir -p "$home/.config" "$home/.local/bin" "$home/.local/bin2" "$home/.local/share/applications"
+    local stubs="$home/stubs"
+    make_stubs "$stubs" 'PulseAudio (on PipeWire 1.6.8)'
+    local sysbin="$home/sysbin"
+    make_minimal_path "$sysbin"
+    cp "$stubs/mirrik" "$stubs/mirrik-gui" "$REPO/" 2>/dev/null
+    printf '%s %s\n' "$home" "$stubs:$home/.local/bin:$home/.local/bin2:$sysbin"
+}
+
+test_state_switch_compositor() {
+    local name='state-wechsel-compositor-altlast'
+    local home path; read -r home path < <(setup_two_phase_home)
+
+    run_installer_once "$home" "$path" "$(a y 1 2 a 1 y)" >/dev/null      # Lauf 1: Hyprland
+    local out; out="$(run_installer_once "$home" "$path" "$(a y 8 2 a y)")"  # Lauf 2: GNOME
+    rm -f "$REPO/mirrik" "$REPO/mirrik-gui"
+
+    local cfg="$home/.config/hypr/hyprland.conf"
+    local problems=()
+    grep -q 'Also still there from an earlier run' <<<"$out" \
+        || problems+=("kein Hinweis auf den Rest aus Lauf 1")
+    grep -qF "delete the '# --- Mirrik ---' block from $cfg" <<<"$out" \
+        || problems+=("der Hyprland-Block aus Lauf 1 wird nicht als Altlast genannt")
+    grep -qF -- '(if still on GNOME)' <<<"$out" \
+        && problems+=("GNOME (die Wahl aus Lauf 2) wurde faelschlich auch als Altlast gemeldet")
+    grep -q 'and remove "Mirrik" under Settings > Keyboard > Custom Shortcuts$' <<<"$out" \
+        || problems+=("die normale GNOME-Zeile aus Lauf 2 fehlt")
+    [ -f "$cfg" ] && grep -qF -- '--- Mirrik ---' "$cfg" \
+        || problems+=("der Hyprland-Block wurde durch Lauf 2 tatsaechlich entfernt (sollte liegen bleiben)")
+    [ -n "${VERBOSE:-}" ] && [ "${#problems[@]}" -gt 0 ] && printf '%s\n' "$out" | tail -25 | sed 's/^/        | /'
+
+    report_case "$name" "${problems[@]}"
+    rm -rf "$home"
+}
+
+test_state_switch_bindir() {
+    local name='state-wechsel-bindir-altlast'
+    local home path; read -r home path < <(setup_two_phase_home)
+
+    run_installer_once "$home" "$path" "$(a y 1 2 a 1 y)" >/dev/null                  # Lauf 1: ~/.local/bin
+    local out; out="$(run_installer_once "$home" "$path" "$home/.local/bin2,y,1,2,a,1")"  # Lauf 2: anderer bindir, Block schon da
+    rm -f "$REPO/mirrik" "$REPO/mirrik-gui"
+
+    local problems=()
+    [ -x "$home/.local/bin2/mirrik" ] || problems+=("mirrik wurde nicht in den neuen bindir installiert")
+    [ -x "$home/.local/bin/mirrik" ] || problems+=("die Installation aus Lauf 1 ist verschwunden - sollte liegen bleiben")
+    grep -q 'Also still there from an earlier run' <<<"$out" \
+        || problems+=("kein Hinweis auf den alten bindir aus Lauf 1")
+    grep -qF "rm $home/.local/bin/mirrik $home/.local/bin/mirrik-gui" <<<"$out" \
+        || problems+=("der rm-Befehl fuer den alten bindir fehlt oder ist ungenau")
+    [ -n "${VERBOSE:-}" ] && [ "${#problems[@]}" -gt 0 ] && printf '%s\n' "$out" | tail -25 | sed 's/^/        | /'
+
+    report_case "$name" "${problems[@]}"
+    rm -rf "$home"
+}
+
+test_state_no_false_positive() {
+    local name='state-unveraendert-keine-falsche-altlast'
+    local home path; read -r home path < <(setup_two_phase_home)
+
+    run_installer_once "$home" "$path" "$(a y 1 2 a 1 y)" >/dev/null   # Lauf 1
+    local out; out="$(run_installer_once "$home" "$path" "$(a y 1 2 a 1)")"  # Lauf 2, gleiche Wahl, Block schon da
+    rm -f "$REPO/mirrik" "$REPO/mirrik-gui"
+
+    local problems=()
+    grep -q 'Also still there from an earlier run' <<<"$out" \
+        && problems+=("Lauf 2 aendert nichts, meldet aber eine Altlast")
+    [ -n "${VERBOSE:-}" ] && [ "${#problems[@]}" -gt 0 ] && printf '%s\n' "$out" | tail -25 | sed 's/^/        | /'
+
+    report_case "$name" "${problems[@]}"
+    rm -rf "$home"
+}
+
+test_state_skip_carries_forward() {
+    local name='state-uebersprungen-kein-fehlalarm'
+    local home path; read -r home path < <(setup_two_phase_home)
+
+    run_installer_once "$home" "$path" "$(a y 8 2 a y)" >/dev/null   # Lauf 1: GNOME eingerichtet
+    local out; out="$(run_installer_once "$home" "$path" "$(a y 13 2 a)")"  # Lauf 2: Schritt 5 uebersprungen
+    rm -f "$REPO/mirrik" "$REPO/mirrik-gui"
+
+    local problems=()
+    grep -q 'Also still there from an earlier run' <<<"$out" \
+        && problems+=("Uebersprungen wird als Wechsel gelesen und faelschlich als Altlast gemeldet")
+    grep -q 'and remove "Mirrik" under Settings > Keyboard > Custom Shortcuts$' <<<"$out" \
+        || problems+=("der GNOME-Rueckbauhinweis aus Lauf 1 fehlt, obwohl Lauf 2 ihn nur uebernehmen sollte")
+    [ -n "${VERBOSE:-}" ] && [ "${#problems[@]}" -gt 0 ] && printf '%s\n' "$out" | tail -25 | sed 's/^/        | /'
+
+    report_case "$name" "${problems[@]}"
+    rm -rf "$home"
+}
+
 a() {  # <desktop:y|n> <wm> <mods> <key> [weitere Antworten...]
     local d="$1" wm="$2" mods="$3" key="$4"; shift 4
     local rest=""; for x in "$@"; do rest="$rest,$x"; done
@@ -388,13 +545,15 @@ CASES=(
   "hyprland-neu-0.56|$(a y 1 2 a 2)|check_rule_neu|cfg=.config/hypr/hyprland.conf;hyprversion=0.56.2"
   "hyprland-genau-0.49|$(a y 1 2 a 2)|check_rule_neu|cfg=.config/hypr/hyprland.conf;hyprversion=0.49.0"
   "hyprland-ohne-hyprctl|$(a y 1 2 a 2)|check_rule_angenommen|cfg=.config/hypr/hyprland.conf"
-  "niri-print|$(a y 4 2 a 2)|check_printed|cfg=.config/niri/config.kdl"
+  "niri-print|$(a y 4 2 a 2)|check_printed_niri|cfg=.config/niri/config.kdl"
   "sway-print|$(a y 2 2 a 2)|check_printed|cfg=.config/sway/config"
   "config-fehlt|$(a y 1 2 a 2)|check_printed|cfg=.config/hypr/hyprland.conf;pre=none"
   "block-schon-da|$(a y 1 2 a 1)|check_untouched|cfg=.config/hypr/hyprland.conf;pre=marker"
   "zweimal-installiert|$(a y 1 2 a 1 y)|check_appended|cfg=.config/hypr/hyprland.conf;repeat=2"
   "lua-erkannt|$(a y 1 2 a 2)|check_lua_hint|cfg=.config/hypr/hyprland.conf;lua=1"
   "gnome-gsettings|$(a y 8 2 a y)|check_gsettings|"
+  "state-datei-hyprland|$(a y 1 2 a 1 y)|check_state_written|cfg=.config/hypr/hyprland.conf"
+  "state-datei-gnome|$(a y 8 2 a y)|check_state_gnome|"
   # AUSGESETZT: Cinnamon laeuft bis "Done" durch, ruft aber kein gsettings auf.
   # Noch nicht geklaert, ob der Zweig andere Antworten erwartet oder etwas fehlt.
   #   "cinnamon-gsettings|,y,9,2,a,y|check_gsettings|"
@@ -464,6 +623,14 @@ for entry in "${CASES[@]}"; do
     IFS='|' read -r name answers check opts <<<"$entry"
     [ -n "$filter" ] && [[ "$name" != *"$filter"* ]] && continue
     run_case "$name" "$answers" "$check" "$opts"
+done
+
+# Zwei-Laeufe-Faelle: nicht ueber die CASES-Tabelle, weil sie zwei verschiedene
+# Antwortfolgen im selben Test-Home brauchen statt einer.
+for fn in test_state_switch_compositor test_state_switch_bindir \
+          test_state_no_false_positive test_state_skip_carries_forward; do
+    [ -n "$filter" ] && [[ "$fn" != *"$filter"* ]] && continue
+    "$fn"
 done
 echo
 printf '  %s bestanden, %s durchgefallen\n' "$pass" "$fail"
