@@ -17,6 +17,14 @@ default-members = ["crates/core", "crates/cli", "crates/gui"]
 version = "0.1.0"
 edition = "2021"
 license = "MIT"
+# Measured with `cargo msrv`, not guessed - run separately per binary crate, since msrv
+# bisects by building and a workspace-wide run drags in whichever platform's foreign
+# backend the machine cannot compile. `cli` alone needs only 1.85.1 (a transitive
+# dependency, clap_lex, requires the edition2024 feature); `gui` needs 1.95.0, set by
+# egui/eframe 0.36's own declared rust-version. The higher of the two applies to the
+# whole workspace, because `rust-version.workspace = true` in every crate means one
+# number has to cover all of them.
+rust-version = "1.95"
 
 # Shared dependencies in one place, so the Linux and Windows backends cannot drift
 # apart on a version.
