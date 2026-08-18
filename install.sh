@@ -53,15 +53,16 @@ confirm() {  # confirm <question> [y|n]  -> exit status
 
 have() { command -v "$1" >/dev/null 2>&1; }
 
-# Versionsvergleich ueber sort -V, damit 0.3.9 kleiner ist als 0.3.64 - ein Vergleich
-# als Text oder als Zahl bekommt genau das falsch.
-version_ge() {  # version_ge <have> <want>  -> 0 wenn have >= want
+# We compare with sort -V here on purpose. Plain text or numeric sorting would rank
+# 0.3.9 above 0.3.64, which is just wrong.
+version_ge() {  # version_ge <have> <want>  -> 0 if have >= want
     [ "$(printf '%s\n%s\n' "$2" "$1" | sort -V | head -n1)" = "$2" ]
 }
 
-# Auswahl aus einer festen Liste. Anything else is asked again - a wrong number must not
-# quietly become something the user did not pick. Empty input takes the default, which is
-# what Enter is for, and what an ended stdin falls back to.
+# Picks from a fixed list. Type something that's not on the list and we just ask again -
+# we never want a typo to quietly turn into a choice nobody actually made. An empty
+# answer takes the default, which is what pressing Enter (or hitting an early end of
+# stdin) is supposed to do anyway.
 choose() {  # choose <question> <default> <allowed...>
     local question="$1" default="$2"; shift 2
     local answer allowed=("$@") v
@@ -70,8 +71,9 @@ choose() {  # choose <question> <default> <allowed...>
         for v in "${allowed[@]}"; do
             [ "$answer" = "$v" ] && { printf '%s' "$answer"; return 0; }
         done
-        # Auf stderr: choose laeuft in einer Kommandosubstitution, alles auf stdout
-        # waere Teil des Rueckgabewerts statt eine Meldung an den Leser.
+        # This has to go to stderr. choose runs inside a command substitution, so
+        # anything we print to stdout would get swallowed into the return value instead
+        # of reaching the person reading it.
         dim "  Not one of the choices. Pick from: ${allowed[*]}" >&2
     done
 }
@@ -164,8 +166,8 @@ done
 
 # Distribution family, for naming the packages rather than guessing at them.
 distro_id=''; distro_like=''; distro_name='your distribution'
-# Der Pfad ist ueberschreibbar, damit der Pruefstand die Distributionszweige erreichen
-# kann, ohne eine Distribution zu sein. Im Alltag bleibt es /etc/os-release.
+# This path can be overridden so the test bench can exercise every distribution branch
+# without actually being that distribution. Day to day, it's just /etc/os-release.
 os_release="${MIRRIK_OS_RELEASE:-/etc/os-release}"
 if [ -r "$os_release" ]; then
     # shellcheck disable=SC1091
@@ -280,14 +282,16 @@ if have pactl; then
     if printf '%s' "$server" | grep -qi pipewire; then
         ok "  PipeWire it is: $server"
 
-        # Mirrik haengt seine Loopbacks ueber `target.object` an ein Geraet. Diese
-        # Eigenschaft gibt es erst ab PipeWire 0.3.64; davor hiess sie `node.target`,
-        # und zusammen mit `node.dont-reconnect` verbindet sich eine aeltere Fassung
-        # still gar nicht - kein Fehler, kein Ton, nichts. Das muss hier auffallen und
-        # nicht erst, wenn jemand die Taste drueckt.
-        # `|| true` ist hier Pflicht, nicht Zierde: grep liefert 1, wenn es nichts findet,
-        # und unter `set -e` beendet das die Zuweisung und damit das Skript. Ein Server,
-        # der sich ohne Versionsnummer meldet, haette den Installer wortlos abgebrochen.
+        # Here's why we care about the exact version: Mirrik hooks its loopbacks onto a
+        # device with `target.object`, a property that only exists from PipeWire 0.3.64
+        # onwards. On anything older it was called `node.target` instead, and paired
+        # with `node.dont-reconnect` an old version just quietly refuses to connect -
+        # no error, no sound, nothing to go on. Way better to catch that now than to
+        # leave someone wondering why nothing happens after they press the hotkey.
+        # One detail that matters: the `|| true` at the end isn't just for show. grep
+        # exits 1 when it finds nothing, and since we're running under `set -e`, that
+        # would kill this assignment (and the whole script with it). Without it, a
+        # server that doesn't report a version number would silently kill the installer.
         pw_version="$(printf '%s' "$server" | grep -oiE 'pipewire[ -]*[0-9]+(\.[0-9]+)+' | grep -oE '[0-9]+(\.[0-9]+)+' | head -n1 || true)"
         if [ -z "$pw_version" ] && have pw-cli; then
             pw_version="$(pw-cli --version 2>/dev/null | grep -oE '[0-9]+(\.[0-9]+)+' | head -n1 || true)"
@@ -401,10 +405,11 @@ ok "  Found them in: $source_dir"
 
 bindir="$(ask '  Install into' "$HOME/.local/bin")"
 
-# Ein Leerzeichen im Zielpfad bricht mehr, als es auf den ersten Blick scheint: die
-# Bind-Zeile jedes Compositors ist unquotiert (`exec, /pfad/mirrik-gui`), und ein
-# Desktop-Eintrag mit Leerzeichen im Exec muss nach Spezifikation zitiert werden, sonst
-# liest der Launcher den Rest als Argument. Beides faellt erst beim Tastendruck auf.
+# A space in this path causes more trouble than you'd expect. Every compositor's bind
+# line is written unquoted (`exec, /path/mirrik-gui`), and a desktop entry's Exec line
+# has to be quoted by spec whenever it contains a space - miss either one and the
+# launcher just reads everything after the space as an argument. Neither problem shows
+# up until someone actually presses the hotkey, so it's worth catching here instead.
 case "$bindir" in
     *[[:space:]]*)
         warn '  That path contains a space.'
@@ -481,8 +486,9 @@ say ''
 apps="${XDG_DATA_HOME:-$HOME/.local/share}/applications"
 if confirm '  Add it?'; then
     mkdir -p "$apps"
-    # Desktop Entry Specification, "Exec": ein Pfad mit Leerzeichen gehoert in doppelte
-    # Anfuehrungszeichen, sonst ist alles nach dem Leerzeichen ein Argument.
+    # Per the Desktop Entry Specification, an Exec path containing a space needs to sit
+    # in double quotes - otherwise everything after that space gets treated as an
+    # argument instead of part of the path.
     case "$bindir" in
         *[[:space:]]*) exec_field="\"$bindir/mirrik-gui\"" ;;
         *)             exec_field="$bindir/mirrik-gui" ;;

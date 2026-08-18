@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
-# Erzeugt die vollstaendige Kombination aus Compositor x Modifier x Config-Weg und laesst
-# jede einzeln laufen. Nicht Stichprobe, sondern Vollzaehlung der Auswahlpfade.
+# Builds every combination of compositor x modifier x config path and runs each one on
+# its own. This isn't a sample of cases - it's the whole set of selection paths.
 set -uo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-# wm-Nummer : Konfigurationsdatei : Art des Zweiges
+# Each entry: wm number : config file : which branch it takes
 WMS=(
   "1:.config/hypr/hyprland.conf:snippet"
   "2:.config/sway/config:snippet"
@@ -13,14 +13,14 @@ WMS=(
   "5:.config/river/init:snippet"
   "6:.config/awesome/rc.lua:snippet"
   "7:.config/sxhkd/sxhkdrc:snippet"
-  "8::werkzeug"
-  "9::werkzeug"
-  "10::hinweis"
-  "11::werkzeug"
-  "12::hinweis"
-  "13::hinweis"
+  "8::tool"
+  "9::tool"
+  "10::hint"
+  "11::tool"
+  "12::hint"
+  "13::hint"
 )
-printf '%s\n' "# erzeugt $(date '+%F %H:%M') — Compositor x Modifier x Config-Weg"
+printf '%s\n' "# generated $(date '+%F %H:%M') — compositor x modifier x config path"
 for entry in "${WMS[@]}"; do
     IFS=':' read -r wm cfg kind <<<"$entry"
     for mods in 1 2 3 4; do
@@ -29,13 +29,14 @@ for entry in "${WMS[@]}"; do
                 echo "matrix-wm${wm}-mods${mods}-append|,y,$wm,$mods,a,1,y|check_appended|cfg=$cfg"
                 echo "matrix-wm${wm}-mods${mods}-print|,y,$wm,$mods,a,2|check_printed|cfg=$cfg" ;;
             snippet-niri)
-                # niri hat keine Marker (ein einzelner binds-Block) - eigene Pruef-
-                # funktion, siehe die Notiz bei check_printed_niri in test-install.sh.
+                # niri doesn't use markers - it's just one binds block - so it gets its
+                # own check function. See the note next to check_printed_niri in
+                # test-install.sh for the full story.
                 echo "matrix-wm${wm}-mods${mods}-print|,y,$wm,$mods,a,2|check_printed_niri|cfg=$cfg" ;;
-            werkzeug)
-                echo "matrix-wm${wm}-mods${mods}-ja|,y,$wm,$mods,a,y|check_tool_called|"
-                echo "matrix-wm${wm}-mods${mods}-nein|,y,$wm,$mods,a,n|check_manual_hint|" ;;
-            hinweis)
+            tool)
+                echo "matrix-wm${wm}-mods${mods}-yes|,y,$wm,$mods,a,y|check_tool_called|"
+                echo "matrix-wm${wm}-mods${mods}-no|,y,$wm,$mods,a,n|check_manual_hint|" ;;
+            hint)
                 echo "matrix-wm${wm}-mods${mods}|,y,$wm,$mods,a|check_manual_hint|" ;;
         esac
     done

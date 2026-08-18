@@ -1,20 +1,23 @@
 <#
-Wird von tools/test-install.ps1 als frischer pwsh-Prozess je Fall gestartet - nie direkt.
+Heads up: tools/test-install.ps1 starts this as a fresh pwsh process for every single
+case - you shouldn't be running it directly.
 
-Dot-sourced install.ps1 definiert dank seines Guards nur Funktionen, fuehrt nichts aus.
-Was hier folgt, ersetzt genau die Funktionen, die auf Windows-only-APIs sitzen (Registry,
-COM, user32-P/Invoke), durch dateibasierte Attrappen unter $env:MIRRIK_TEST_HOME - der
-Rest von install.ps1 (Say/Ask/Confirm, Pfadlogik, Kopiervorgaenge, PE-Header-Lesen) laeuft
-unveraendert und echt. Danach wird Invoke-MirrikInstaller genauso aufgerufen wie am
-Skriptende von install.ps1 selbst; ein `exit` darin beendet nur diesen Prozess.
+Dot-sourcing install.ps1 only defines its functions, thanks to its guard - nothing
+actually runs yet. What we do here is swap out just the functions that touch
+Windows-only APIs (registry, COM, user32 P/Invoke) for file-based stubs living under
+$env:MIRRIK_TEST_HOME. Everything else in install.ps1 (Say/Ask/Confirm, the path logic,
+copying files, reading the PE header) runs completely for real, untouched. Once that's
+set up, we call Invoke-MirrikInstaller exactly like install.ps1 does at its own end -
+if it hits an `exit`, that only closes this process, not your session.
 #>
 param([switch]$Uninstall)
 $ErrorActionPreference = 'Stop'
 
-# Gerettet VOR dem Dot-Source: install.ps1 hat selbst ein param([switch]$Uninstall), und
-# Dot-Sourcing laeuft im selben Scope wie hier - ohne Argumente an die Dot-Source-Zeile
-# bindet dessen eigener Parameter die gleichnamige Variable neu auf $false und ueberschreibt
-# damit lautlos, was gerade von der Kommandozeile kam.
+# We grab this BEFORE dot-sourcing, and here's why: install.ps1 has its own
+# param([switch]$Uninstall), and dot-sourcing shares the same scope as this file. Call
+# the dot-source line without arguments and install.ps1's own parameter quietly rebinds
+# our variable of the same name back to $false - wiping out whatever came in from the
+# command line, with no warning at all.
 $doUninstall = $Uninstall.IsPresent
 
 $fakePathFile     = Join-Path $env:MIRRIK_TEST_HOME 'fake-user-path.txt'
@@ -22,26 +25,28 @@ $fakeShortcutFile = Join-Path $env:MIRRIK_TEST_HOME 'fake-shortcuts.json'
 
 . $env:MIRRIK_TEST_INSTALLER
 
-# ---- Registry (Get-/Set-UserPathRaw) -> eine Datei im Test-HOME ----
+# ---- Registry stand-in: Get-/Set-UserPathRaw just read and write a file in the test HOME ----
 function Get-UserPathRaw {
     if (Test-Path $fakePathFile) { (Get-Content $fakePathFile -Raw) -replace "`n$", '' } else { '' }
 }
 function Set-UserPathRaw([string]$value) {
     Set-Content -Path $fakePathFile -Value $value -NoNewline
 }
-# Broadcasts an alle Fenster - in einem Testprozess gibt es keine und nichts zu tun.
+# The real version broadcasts a change to every open window. A test process has no
+# windows to tell, so there's simply nothing to do here.
 function Publish-EnvironmentChange { }
 
-# Streicht die "aus dem Internet heruntergeladen"-Markierung (Zone.Identifier ADS) -
-# ein Windows-NTFS-Konzept, das Linux gar nicht kennt. Kein Aequivalent noetig: ohne
-# Downloadmarkierung gibt es unter Linux nichts zu entfernen.
+# The real Unblock-File strips the "downloaded from the internet" flag (the
+# Zone.Identifier ADS) - an NTFS-only concept that Linux doesn't have at all. So there's
+# no need for a stand-in here: with no download flag to begin with, there's nothing to
+# remove.
 function Unblock-File {
     [CmdletBinding()]
     param([Parameter(ValueFromPipeline)]$InputObject, [string]$Path)
     process { }
 }
 
-# ---- AltGr-Layout -> aus einer Umgebungsvariable statt aus dem echten Keyboard-Layout ----
+# ---- AltGr layout stand-in: read from an env var instead of the real keyboard layout ----
 function Get-AltGrKeys {
     $result = @{}
     if ($env:MIRRIK_TEST_ALTGR) {
@@ -54,7 +59,7 @@ function Get-AltGrKeys {
     return $result
 }
 
-# ---- COM-Verknuepfungen -> JSON-Datei statt echter .lnk-Inhalte ----
+# ---- COM shortcut stand-in: a JSON file stands in for a real .lnk file's contents ----
 function Read-FakeShortcuts {
     if (Test-Path $fakeShortcutFile) {
         $raw = Get-Content $fakeShortcutFile -Raw
@@ -83,11 +88,12 @@ function New-MirrikShortcut {
         Description = $Description; HotKey = $HotKey
     }
     Write-FakeShortcuts $t
-    # Damit Test-Path $shortcutPath danach true ist, wie bei einer echten .lnk-Datei.
+    # We still create the empty file so that Test-Path $shortcutPath comes back true
+    # afterwards - just like it would for a real .lnk file.
     New-Item -ItemType File -Force -Path $Path | Out-Null
 }
 
-# ---- Administrator-Status -> aus einer Umgebungsvariable statt einer echten Windows-Identity ----
+# ---- Administrator check stand-in: an env var instead of a real Windows identity ----
 function Test-RunningAsAdministrator {
     if ($env:MIRRIK_TEST_ADMIN -eq '1') {
         return @{ IsAdmin = $true; Name = 'TESTMACHINE\Administrator' }
@@ -95,7 +101,7 @@ function Test-RunningAsAdministrator {
     return @{ IsAdmin = $false; Name = $null }
 }
 
-# ---- Grafiktreiber -> aus einer Umgebungsvariable statt einer echten CIM-Abfrage ----
+# ---- Graphics driver stand-in: an env var instead of a real CIM query ----
 function Get-CimInstance {
     [CmdletBinding()]
     param([Parameter(Position = 0)][string]$ClassName, [string]$ErrorActionParam)
