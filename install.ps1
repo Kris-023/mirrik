@@ -144,6 +144,52 @@ function Get-ExeArchitecture([string]$path) {
     } catch { 'unknown' }
 }
 
+# .lnk files are COM (WScript.Shell), which does not exist outside Windows at all - not
+# even as a type that throws, the way WindowsIdentity below does. Wrapped in named
+# functions so a test bench can replace them with a file-based fake instead of a real
+# shortcut; behaviour on real Windows is unchanged, it is the same three calls as before.
+function Get-ShortcutTarget([string]$path) {
+    if (-not (Test-Path $path)) { return $null }
+    (New-Object -ComObject WScript.Shell).CreateShortcut($path).TargetPath
+}
+
+function Get-ShortcutHotkey([string]$path) {
+    (New-Object -ComObject WScript.Shell).CreateShortcut($path).HotKey
+}
+
+function New-MirrikShortcut {
+    param([string]$Path, [string]$TargetPath, [string]$WorkingDirectory, [string]$Description, [string]$HotKey)
+    $shortcut = (New-Object -ComObject WScript.Shell).CreateShortcut($Path)
+    $shortcut.TargetPath = $TargetPath
+    $shortcut.WorkingDirectory = $WorkingDirectory
+    $shortcut.Description = $Description
+    $shortcut.HotKey = $HotKey
+    $shortcut.Save()
+}
+
+# WindowsPrincipal throws outright on non-Windows platforms (the Linux test bench never
+# runs anything elevated anyway) - caught the same way the Win32_VideoController lookup
+# a few lines below already handles a query the platform cannot answer.
+function Test-RunningAsAdministrator {
+    try {
+        $identity = [Security.Principal.WindowsIdentity]::GetCurrent()
+        $isAdmin = (New-Object Security.Principal.WindowsPrincipal($identity)).IsInRole(
+            [Security.Principal.WindowsBuiltInRole]::Administrator)
+        return @{ IsAdmin = $isAdmin; Name = $identity.Name }
+    } catch {
+        return @{ IsAdmin = $false; Name = $null }
+    }
+}
+
+# Everything from here down is one function, called at the very bottom only when this
+# file is *run*, not when it is dot-sourced. A test bench dot-sources it to get the
+# functions above without anything executing, overrides the ones that touch Windows-only
+# APIs (New-MirrikShortcut, Get-ShortcutTarget, Get-ShortcutHotkey, Get-AltGrKeys), and
+# then calls Invoke-MirrikInstaller itself - in a fresh process per case, since `exit`
+# below ends whatever process is running it either way.
+function Invoke-MirrikInstaller {
+    param([switch]$Uninstall)
+
 $startMenu = Join-Path $env:APPDATA 'Microsoft\Windows\Start Menu\Programs'
 $shortcutPath = Join-Path $startMenu 'Mirrik.lnk'
 
@@ -152,7 +198,6 @@ $shortcutPath = Join-Path $startMenu 'Mirrik.lnk'
 if ($Uninstall) {
     Heading 'Removing Mirrik'
 
-    $shell = New-Object -ComObject WScript.Shell
     $entries = (Get-UserPathRaw) -split ';' | Where-Object { $_ -ne '' }
     $state = Join-Path $env:LOCALAPPDATA 'mirrik'
 
@@ -162,7 +207,7 @@ if ($Uninstall) {
     # below before anything is deleted, which is the check that matters.
     $installed = $null
     if (Test-Path $shortcutPath) {
-        $target = $shell.CreateShortcut($shortcutPath).TargetPath
+        $target = Get-ShortcutTarget $shortcutPath
         if ($target) { $installed = Split-Path $target -Parent }
     }
     if (-not $installed) {
@@ -292,12 +337,11 @@ Say "  Processor architecture: $machineArch" DarkGray
 # Running the installer elevated is a trap rather than a help: the per-user folder, the
 # per-user PATH and the Start menu it writes to all belong to the administrator account,
 # not to the person who will be pressing the hotkey.
-$identity = [Security.Principal.WindowsIdentity]::GetCurrent()
-if ((New-Object Security.Principal.WindowsPrincipal($identity)).IsInRole(
-        [Security.Principal.WindowsBuiltInRole]::Administrator)) {
+$admin = Test-RunningAsAdministrator
+if ($admin.IsAdmin) {
     Say ''
     Say '  You are running this as administrator. Nothing here needs that, and it' Yellow
-    Say "  changes where things land: everything goes to $($identity.Name), not to" Yellow
+    Say "  changes where things land: everything goes to $($admin.Name), not to" Yellow
     Say '  the account you normally use. If those are the same, carry on.' Yellow
     if (-not (Confirm '  Continue?' $false)) { exit 1 }
 }
@@ -512,15 +556,14 @@ if (Confirm '  Create the shortcut?') {
         [Environment]::GetFolderPath('CommonDesktopDirectory')
     ) | Where-Object { $_ -and (Test-Path $_) } | Select-Object -Unique
 
-    $shell = New-Object -ComObject WScript.Shell
     $taken = @{}
     foreach ($searchRoot in $searchRoots) {
         Get-ChildItem $searchRoot -Recurse -Filter *.lnk -ErrorAction SilentlyContinue |
             ForEach-Object {
                 try {
-                    $link = $shell.CreateShortcut($_.FullName)
-                    if ($link.HotKey -and $_.FullName -ne $shortcutPath) {
-                        $taken[$link.HotKey.ToUpper()] = $_.BaseName
+                    $hotkey = Get-ShortcutHotkey $_.FullName
+                    if ($hotkey -and $_.FullName -ne $shortcutPath) {
+                        $taken[$hotkey.ToUpper()] = $_.BaseName
                     }
                 } catch { }
             }
@@ -567,12 +610,8 @@ if (Confirm '  Create the shortcut?') {
         $key = $typed
     }
 
-    $shortcut = $shell.CreateShortcut($shortcutPath)
-    $shortcut.TargetPath = $gui
-    $shortcut.WorkingDirectory = $target
-    $shortcut.Description = 'Play the same sound on two or more output devices'
-    $shortcut.HotKey = "CTRL+ALT+$key"
-    $shortcut.Save()
+    New-MirrikShortcut -Path $shortcutPath -TargetPath $gui -WorkingDirectory $target `
+        -Description 'Play the same sound on two or more output devices' -HotKey "CTRL+ALT+$key"
 
     Say "  Done. Ctrl+Alt+$key opens the window from anywhere." Green
     Say '  It is also in the Start menu under "Mirrik".' DarkGray
@@ -648,3 +687,8 @@ Say ''
 Say '  To undo all of this:' DarkGray
 Say '    powershell -ExecutionPolicy Bypass -File install.ps1 -Uninstall' Gray
 Say ''
+}
+
+if ($MyInvocation.InvocationName -ne '.') {
+    Invoke-MirrikInstaller -Uninstall:$Uninstall
+}
