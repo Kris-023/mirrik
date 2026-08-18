@@ -104,6 +104,24 @@ git clone https://github.com/Kris-023/mirrik.git
 cd mirrik
 ```
 
+**If you downloaded a release archive instead of cloning**, check it before you run it. A
+`SHA256SUMS` file ships next to the archives, and comparing against it is the only way to
+know that what landed on your disk is what was published — the programs are not signed with
+a code signing certificate, so Windows will warn about them no matter what (there's more on
+that below).
+
+```powershell
+Get-FileHash -Algorithm SHA256 mirrik-0.1.0-windows-x86_64.zip      # Windows
+```
+
+```sh
+sha256sum -c SHA256SUMS                                             # Linux, checks every line
+```
+
+Being honest about what that proves: it tells you the download arrived intact and matches
+the published number. It does not tell you the number itself is trustworthy — for that, the
+surest path is the one above, which is to build it yourself from the source you can read.
+
 ### Windows
 
 ```powershell

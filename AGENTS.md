@@ -122,6 +122,43 @@ system they run on. If you change either installer, run its bench before claimin
 works — several real bugs in this project were only ever caught this way, not by reading the
 diff.
 
+Faking cannot answer everything, though. Whether the shortcut really carries its hotkey,
+whether the `PATH` entry really works and whether a running `.exe` really refuses to be
+overwritten are questions only Windows itself can settle, so there is a third bench for
+exactly those:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File tools/test-install-windows.ps1   # 9 checks, real Windows only
+```
+
+This one is not faked. `APPDATA` and `LOCALAPPDATA` point into a temp directory, so the
+install folder, the state folder and the Start menu shortcut stay out of your real ones —
+but the user `PATH` lives in `HKCU\Environment`, which no environment variable can
+redirect. So it genuinely writes to your `PATH` and puts it back afterwards, byte for byte
+and with the same registry type, restoring it in a `finally` block so a failed case or a
+Ctrl+C cannot leave it changed.
+
+### Does the mirror actually carry audio?
+
+Every other test in this project checks bookkeeping — the state file, the holder process,
+the device list, the latency it reports. None of them would notice a mirror that ran
+perfectly and moved no audio at all. One test answers that directly, by watching the
+target's own peak meter while the same sound plays throughout:
+
+```powershell
+cargo build --release -p mirrik-cli
+cargo test -p mirrik-backend-windows --test level -- --ignored --nocapture
+```
+
+It is an A/B, not a measurement: mirror off, the target must read silence; mirror on, it
+must read the signal. Anything that shows up in the second reading can only have come
+through us. `#[ignore]` by default, because it plays a sound out loud and starts a real
+mirror on real hardware — and it fails rather than skipping when something is missing, so
+it can never pass by doing nothing.
+
+There is no Linux counterpart yet. `module-loopback` has been measured by hand, but nothing
+automatic checks that samples arrive.
+
 ## Code conventions
 
 - **English everywhere in code** — identifiers, comments, UI strings, commit messages. (Only
