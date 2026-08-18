@@ -3,6 +3,7 @@ name = "mirrik-backend-windows"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
+repository.workspace = true
 rust-version.workspace = true
 description = "WASAPI loopback backend for Mirrik: mirrors audio without creating a device"
 

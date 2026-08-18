@@ -17,6 +17,7 @@ default-members = ["crates/core", "crates/cli", "crates/gui"]
 version = "0.1.0"
 edition = "2021"
 license = "MIT"
+repository = "https://github.com/Kris-023/mirrik"
 # Measured with `cargo msrv`, not guessed - run separately per binary crate, since msrv
 # bisects by building and a workspace-wide run drags in whichever platform's foreign
 # backend the machine cannot compile. `cli` alone needs only 1.85.1 (a transitive
