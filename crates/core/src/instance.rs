@@ -11,11 +11,11 @@
 //!
 //! # Leaves nothing behind
 //!
-//! The claim is an abstract unix socket, not a file: it exists only as long as the
-//! process holds it, and the kernel releases it on exit — including `kill -9`, a panic
-//! and a session that ends underneath it. There is no stale lock file to clean up and no
-//! liveness check to get wrong, which is the trap this project has already paid for once
-//! with holder processes.
+//! The claim is never a file: an abstract unix socket on Linux, a named mutex on
+//! Windows. Either one exists only as long as the process holds it, and the kernel
+//! releases it on exit — including `kill -9`, a panic and a session that ends underneath
+//! it. There is no stale lock file to clean up and no liveness check to get wrong, which
+//! is the trap this project has already paid for once with holder processes.
 
 use anyhow::Result;
 
@@ -23,6 +23,10 @@ use anyhow::Result;
 pub struct Claim {
     #[cfg(target_os = "linux")]
     _socket: std::os::unix::net::UnixListener,
+    // An OwnedHandle so the mutex is closed for us on drop, panic or exit - the same
+    // "the kernel cleans up after us" deal the unix socket gives on the other side.
+    #[cfg(windows)]
+    _mutex: std::os::windows::io::OwnedHandle,
 }
 
 /// Try to become the only running instance under `name`.
@@ -52,16 +56,42 @@ pub fn claim(name: &str) -> Result<Option<Claim>> {
     }
 }
 
-/// No guard on this platform yet, so every start is allowed.
+/// Try to become the only running instance under `name`.
 ///
-/// Windows would use a named mutex (`CreateMutexW`, then `GetLastError() ==
-/// ERROR_ALREADY_EXISTS`), which behaves the same way: held by the process, released by
-/// the kernel. Not written here because it cannot be tested from this side, and an
-/// untested claim that wrongly reports "already running" would stop the window opening
-/// at all.
-#[cfg(not(target_os = "linux"))]
-pub fn claim(_name: &str) -> Result<Option<Claim>> {
-    Ok(Some(Claim {}))
+/// Same deal as on Linux, told in Windows: a named mutex is owned by the process and the
+/// kernel drops it when the process goes away, so there is nothing stale left behind
+/// either. `Local\` puts the name in the logon session's namespace, which is what keeps
+/// two users on the same machine from locking each other out.
+///
+/// `Ok(Some(claim))` - the name is ours, keep the claim alive.
+/// `Ok(None)` - somebody else has it; this process should exit quietly.
+///
+/// An error means the question could not be answered. Callers are expected to carry on:
+/// a second window is a nuisance, no window at all is a failure.
+#[cfg(windows)]
+pub fn claim(name: &str) -> Result<Option<Claim>> {
+    use std::os::windows::io::{FromRawHandle, OwnedHandle};
+    use windows::core::HSTRING;
+    use windows::Win32::Foundation::{GetLastError, ERROR_ALREADY_EXISTS};
+    use windows::Win32::System::Threading::CreateMutexW;
+
+    let name = HSTRING::from(format!("Local\\mirrik.{name}"));
+
+    // CreateMutexW hands back a valid handle even when the mutex already exists, so the
+    // handle alone tells you nothing - the answer is in the last error, and only right
+    // here, before anything else has a chance to overwrite it.
+    let handle = unsafe { CreateMutexW(None, true, &name)? };
+    let already_there = unsafe { GetLastError() } == ERROR_ALREADY_EXISTS;
+
+    // Ours either way: closing it is what releases our reference, and on the "somebody
+    // else has it" path that has to happen now rather than being leaked.
+    let handle = unsafe { OwnedHandle::from_raw_handle(handle.0) };
+
+    if already_there {
+        Ok(None)
+    } else {
+        Ok(Some(Claim { _mutex: handle }))
+    }
 }
 
 #[cfg(test)]
@@ -69,7 +99,6 @@ mod tests {
     use super::*;
 
     #[test]
-    #[cfg(target_os = "linux")]
     fn second_claim_is_refused_and_the_name_comes_back() {
         // Unique per run: tests share a process, and the namespace outlives nothing.
         let name = format!("test.{}", std::process::id());

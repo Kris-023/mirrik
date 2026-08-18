@@ -11,3 +11,9 @@ description = "Shared model and backend trait behind Mirrik's audio mirroring"
 anyhow.workspace = true
 serde.workspace = true
 serde_json.workspace = true
+
+# Only the single-instance guard needs this, and only on Windows: a named mutex plus the
+# last-error code that tells us somebody already holds it. Win32_Security comes along
+# because CreateMutexW takes SECURITY_ATTRIBUTES, even though we pass None.
+[target.'cfg(windows)'.dependencies]
+windows = { version = "0.62.2", features = ["Win32_System_Threading", "Win32_Foundation", "Win32_Security"] }
