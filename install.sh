@@ -930,22 +930,26 @@ $MARK_CLOSE"
         # actually decides. Ask about the action instead, and let the reasons live in the
         # options.
         default_choice=1
-        if [ ! -f "$config" ]; then
-            warn "  $config does not exist."
-            dim '  Either your configuration lives somewhere else, or it is in another'
-            dim '  format. Appending would create a file your setup never reads.'
-            say ''
-            default_choice=2
-        elif [ "$wm" = 1 ] && { compgen -G "$conf_home/hypr/*.lua" >/dev/null 2>&1 ||
+        if [ "$wm" = 1 ] && { compgen -G "$conf_home/hypr/*.lua" >/dev/null 2>&1 ||
                         compgen -G "$conf_home/hypr/*/*.lua" >/dev/null 2>&1; }; then
-            # Hyprland can be driven from Lua by several community setups. The lines above
-            # are conf syntax and will not work there as they stand.
+            # Checked before the plain "does the file exist" case below, on purpose. A
+            # Lua-driven Hyprland setup often has no hyprland.conf at all - it is never
+            # read, so there is no reason for one to exist. Checking "does the file
+            # exist" first meant the setup that most needed the translation instead got
+            # only the generic "does not exist, maybe your config lives elsewhere"
+            # message, with no mention of Lua anywhere. Found from a real run.
             warn '  Lua files found next to your Hyprland config.'
             dim '  If your binds live in Lua, the lines above are the wrong syntax - they'
             dim '  have to be translated. With the common hl.* API that is roughly:'
             say ''
             say "    hl.bind(\"${hypr// / + } + $upper\", hl.dsp.exec_cmd(\"$gui\"))"
             say "    hl.window_rule({ match = { class = \"^mirrik\$\" }, float = true, center = true })"
+            say ''
+            default_choice=2
+        elif [ ! -f "$config" ]; then
+            warn "  $config does not exist."
+            dim '  Either your configuration lives somewhere else, or it is in another'
+            dim '  format. Appending would create a file your setup never reads.'
             say ''
             default_choice=2
         fi

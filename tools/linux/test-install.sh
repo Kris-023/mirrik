@@ -754,6 +754,10 @@ CASES=(
   "block-already-there|$(a y 1 2 a 1)|check_untouched|cfg=.config/hypr/hyprland.conf;pre=marker"
   "installed-twice|$(a y 1 2 a 1 y)|check_appended|cfg=.config/hypr/hyprland.conf;repeat=2"
   "lua-detected|$(a y 1 2 a 2)|check_lua_hint|cfg=.config/hypr/hyprland.conf;lua=1"
+  # The real bug: a Lua setup usually has no hyprland.conf at all, since nothing ever
+  # reads it. This is the case that slipped through before the "does it exist" check
+  # was reordered behind the Lua check - found on a real run, not in this bench.
+  "lua-detected-no-conf-file|$(a y 1 2 a 2)|check_lua_hint|cfg=.config/hypr/hyprland.conf;lua=1;pre=none"
   "gnome-gsettings|$(a y 8 2 a y)|check_gsettings|"
   "state-file-hyprland|$(a y 1 2 a 1 y)|check_state_written|cfg=.config/hypr/hyprland.conf"
   "state-file-gnome|$(a y 8 2 a y)|check_state_gnome|"
