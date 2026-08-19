@@ -54,9 +54,9 @@ function Confirm([string]$question, [bool]$defaultYes = $true) {
 }
 
 # The user PATH lives in the registry, and .NET's SetEnvironmentVariable is the wrong tool
-# for it twice over: reading through it expands %USERPROFILE% and friends, and writing
-# through it stores the result as a plain string. Do both and every variable someone had in
-# their PATH is silently baked into a literal path that stops following them around.
+# for it, twice over. Reading through it expands %USERPROFILE% and friends, and writing
+# through it stores the result as a plain string. Do both, and every variable someone had
+# in their PATH gets silently baked into a literal path that stops following them around.
 # So: read raw, write back with the type it already had.
 function Get-UserPathRaw {
     $key = [Microsoft.Win32.Registry]::CurrentUser.OpenSubKey('Environment')
@@ -68,8 +68,8 @@ function Get-UserPathRaw {
 }
 
 # Windows delivers AltGr as Ctrl+Alt, and a shortcut hotkey can only be Ctrl+Alt+<key>. On a
-# German, French, Polish ... layout that means the hotkey quietly eats a character the user
-# types: Ctrl+Alt+Q is @, Ctrl+Alt+E is EUR. Ask the layout which keys those are.
+# German, French, Polish ... layout, that means the hotkey quietly eats a character the
+# user types: Ctrl+Alt+Q is @, Ctrl+Alt+E is EUR. Ask the layout which keys those are.
 Add-Type -Namespace Mirrik -Name Keyboard -MemberDefinition @'
 [DllImport("user32.dll")] public static extern IntPtr GetKeyboardLayout(uint idThread);
 [DllImport("user32.dll", CharSet = CharSet.Unicode)] public static extern short VkKeyScanEx(char ch, IntPtr dwhkl);
@@ -81,7 +81,7 @@ function Get-AltGrKeys {
     $found = @{}
     # Walking the characters rather than the keys: every AltGr character a Windows layout
     # produces lives in Latin-1/Extended-A/B, plus the euro sign. ToUnicodeEx would answer
-    # the other direction but can leave a dead key half-pressed behind - this cannot.
+    # the other direction, but it can leave a dead key half-pressed behind. This can't.
     foreach ($code in @(0x20..0x24F) + @(0x20AC)) {
         $scan = [Mirrik.Keyboard]::VkKeyScanEx([char]$code, $hkl)
         if ($scan -eq -1) { continue }
@@ -144,7 +144,7 @@ function Get-ExeArchitecture([string]$path) {
     } catch { 'unknown' }
 }
 
-# .lnk files are COM (WScript.Shell), which does not exist outside Windows at all - not
+# .lnk files are COM (WScript.Shell), which doesn't exist outside Windows at all. Not
 # even as a type that throws, the way WindowsIdentity below does. Wrapped in named
 # functions so a test bench can replace them with a file-based fake instead of a real
 # shortcut; behaviour on real Windows is unchanged, it is the same three calls as before.
@@ -168,7 +168,7 @@ function New-MirrikShortcut {
 }
 
 # WindowsPrincipal throws outright on non-Windows platforms (the Linux test bench never
-# runs anything elevated anyway) - caught the same way the Win32_VideoController lookup
+# runs anything elevated anyway). Caught the same way the Win32_VideoController lookup
 # a few lines below already handles a query the platform cannot answer.
 function Test-RunningAsAdministrator {
     try {
@@ -203,8 +203,8 @@ if ($Uninstall) {
 
     # Where it went is worked out, not asked. The shortcut points straight at it; failing
     # that, the PATH entry *is* it; failing both, there is the default. Asking would be a
-    # keypress for an answer the machine already has - and the folder is named in the plan
-    # below before anything is deleted, which is the check that matters.
+    # keypress for an answer the machine already has. And the folder gets named in the
+    # plan below before anything is deleted, which is the check that actually matters.
     $installed = $null
     if (Test-Path $shortcutPath) {
         $target = Get-ShortcutTarget $shortcutPath
@@ -225,8 +225,8 @@ if ($Uninstall) {
     })
 
     # What is actually there is worked out first and shown in one go: uninstalling is a
-    # single decision, not four. Each piece is looked for independently - a folder someone
-    # deleted by hand must not leave the PATH entry and the shortcut behind for good.
+    # single decision, not four. Each piece is looked for independently, because a folder
+    # someone deleted by hand shouldn't leave the PATH entry and the shortcut behind for good.
     $plan = @()
     if (Test-Path $installed)    { $plan += "the programs in $installed" }
     if ($onPath.Count -gt 0)     { $plan += "the PATH entry for that folder" }
@@ -334,9 +334,9 @@ if ($os.Major -lt 10) {
 $machineArch = if ($env:PROCESSOR_ARCHITECTURE) { $env:PROCESSOR_ARCHITECTURE } else { 'unknown' }
 Say "  Processor architecture: $machineArch" DarkGray
 
-# Running the installer elevated is a trap rather than a help: the per-user folder, the
+# Running the installer elevated is a trap rather than a help. The per-user folder, the
 # per-user PATH and the Start menu it writes to all belong to the administrator account,
-# not to the person who will be pressing the hotkey.
+# not to the person who will actually be pressing the hotkey.
 $admin = Test-RunningAsAdministrator
 if ($admin.IsAdmin) {
     Say ''
@@ -374,7 +374,7 @@ Heading '2. The program itself'
 
 $root = $PSScriptRoot
 # Deliberately not `target\debug`: it looks like a find, but installs whatever a developer
-# last compiled - unoptimised, and carrying any debug output that was never meant to ship.
+# last compiled. Unoptimised, and carrying any debug output that was never meant to ship.
 # If only a debug build exists, saying so and offering to build properly is the better answer.
 $candidates = @(
     (Join-Path $root 'target\release'),   # built from this repository
@@ -489,7 +489,8 @@ while (-not $target) {
     }
 }
 
-# A running holder process would hold its own .exe open and the copy would fail halfway.
+# A running holder process holds its own .exe open, and the copy would fail halfway
+# through if it were still running.
 $existingCli = Join-Path $target 'mirrik.exe'
 if (Test-Path $existingCli) {
     # Say which version is being replaced. Without this the script silently overwrites an
@@ -531,8 +532,8 @@ Heading '4. The command line'
 $rawPath = Get-UserPathRaw
 $entries = @($rawPath -split ';' | Where-Object { $_ -ne '' })
 
-# An older copy somewhere else on the PATH wins or loses depending on the order, and
-# then `mirrik` is not the mirrik you just installed.
+# An older copy somewhere else on the PATH wins or loses depending on the order. And
+# then `mirrik` isn't the mirrik you just installed.
 $strays = @()
 foreach ($entry in $entries) {
     if ($entry -eq $target) { continue }
@@ -574,8 +575,8 @@ Say '  each time rather than raising a window that is already open.' DarkGray
 Say ''
 
 if (Confirm '  Create the shortcut?') {
-    # Every shortcut with a hotkey is in one of these four places; a duplicate combination
-    # goes to whichever Windows finds first, silently.
+    # Every shortcut with a hotkey lives in one of these four places. A duplicate
+    # combination just goes to whichever Windows finds first, silently.
     $searchRoots = @(
         (Join-Path $env:APPDATA 'Microsoft\Windows\Start Menu'),
         (Join-Path $env:ProgramData 'Microsoft\Windows\Start Menu'),
@@ -584,8 +585,8 @@ if (Confirm '  Create the shortcut?') {
     ) | Where-Object { $_ -and (Test-Path $_) } | Select-Object -Unique
 
     # Say something first: reading a shortcut goes through COM and costs a millisecond or
-    # so each, more when the disk is cold. A Start menu with a few hundred entries - 257 on
-    # the machine this was measured on - means about two seconds of nothing happening right
+    # so each, more when the disk is cold. A Start menu with a few hundred entries (257 on
+    # the machine this was measured on) means about two seconds of nothing happening right
     # after the user pressed Enter, and silence right there reads as a hang.
     Say '  Looking at your other shortcuts to see which hotkeys are taken...' DarkGray
 
@@ -680,7 +681,7 @@ Say '      "this program is dangerous". It says the same thing about every new' 
 Say '      build of every unsigned tool.' DarkGray
 Say '    * It is also exactly what actual malware wants you to click through. The' DarkGray
 Say '      reason to trust this one is that you can read every line of it and build' DarkGray
-Say '      it yourself - not that a dialog was dismissed.' DarkGray
+Say '      it yourself. Not that a dialog was dismissed.' DarkGray
 Say ''
 Say '  If a third-party antivirus quarantines it instead, this script deliberately' DarkGray
 Say '  does not offer to add an exclusion for itself. Talking you into excluding an' DarkGray
