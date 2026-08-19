@@ -201,10 +201,10 @@ if ($Uninstall) {
     $entries = (Get-UserPathRaw) -split ';' | Where-Object { $_ -ne '' }
     $state = Join-Path $env:LOCALAPPDATA 'mirrik'
 
-    # Where it went is worked out, not asked. The shortcut points straight at it; failing
-    # that, the PATH entry *is* it; failing both, there is the default. Asking would be a
-    # keypress for an answer the machine already has. And the folder gets named in the
-    # plan below before anything is deleted, which is the check that actually matters.
+    # This works out where it went rather than asking. The shortcut points straight at it;
+    # failing that, the PATH entry *is* it; failing both, there is the default. Asking
+    # would be a keypress for an answer the machine already has. And the folder gets named
+    # in the plan below before anything is deleted, which is the check that actually matters.
     $installed = $null
     if (Test-Path $shortcutPath) {
         $target = Get-ShortcutTarget $shortcutPath
@@ -224,8 +224,8 @@ if ($Uninstall) {
         [Environment]::ExpandEnvironmentVariables($_) -eq $installed
     })
 
-    # What is actually there is worked out first and shown in one go: uninstalling is a
-    # single decision, not four. Each piece is looked for independently, because a folder
+    # This works out what is actually there first and shows it in one go: uninstalling is
+    # a single decision, not four. Each piece is looked for independently, because a folder
     # someone deleted by hand shouldn't leave the PATH entry and the shortcut behind for good.
     $plan = @()
     if (Test-Path $installed)    { $plan += "the programs in $installed" }
@@ -298,7 +298,7 @@ Say ''
 Say '  M I R R I K' Cyan
 Say '  Play the same sound on two or more output devices at once.' DarkGray
 Say ''
-Say '  This script will, asking before each step:' DarkGray
+Say '  This script does four things, asking before each one:' DarkGray
 Say '    1. check this machine can actually run it' DarkGray
 Say '    2. put mirrik.exe and mirrik-gui.exe somewhere permanent' DarkGray
 Say '    3. add that folder to your PATH, so `mirrik` works in any terminal' DarkGray
@@ -360,7 +360,8 @@ if ($adapters.Count -gt 0 -and -not $realGpu) {
     Say ''
     Say "  Only a basic display adapter found: $($adapters -join ', ')" Yellow
     Say '  The window needs OpenGL 2.0 or better and will not open on this. Install the' Yellow
-    Say '  graphics driver for your card. The command line works either way.' Yellow
+    Say '  graphics driver for your card to fix that. The command line tools do not use' Yellow
+    Say '  OpenGL at all, so they work fine even without a graphics driver.' Yellow
 } elseif ($env:SESSIONNAME -like 'RDP-*') {
     Say ''
     Say '  This is a Remote Desktop session. The window may fail to open here even' Yellow
@@ -374,8 +375,8 @@ Heading '2. The program itself'
 
 $root = $PSScriptRoot
 # Deliberately not `target\debug`: it looks like a find, but installs whatever a developer
-# last compiled. Unoptimised, and carrying any debug output that was never meant to ship.
-# If only a debug build exists, saying so and offering to build properly is the better answer.
+# last compiled - unoptimised, and carrying debug output that was never meant to ship. If
+# only a debug build exists, saying so and offering to build properly is the better answer.
 $candidates = @(
     (Join-Path $root 'target\release'),   # built from this repository
     $root                                            # unpacked release archive
@@ -623,7 +624,7 @@ if (Confirm '  Create the shortcut?') {
 
     $key = $null
     while (-not $key) {
-        $typed = (Ask '  Ctrl+Alt+  which key? (a single letter or digit)' $suggestion).ToUpper()
+        $typed = (Ask '  Ctrl+Alt+ and which key? (a single letter or digit)' $suggestion).ToUpper()
         if ($typed -notmatch '^[A-Z0-9]$') {
             Say '  One letter or digit, nothing else - that is all Windows accepts.' Yellow
             continue
@@ -650,8 +651,8 @@ if (Confirm '  Create the shortcut?') {
     Say "  Done. Ctrl+Alt+$key opens the window from anywhere." Green
     Say '  It is also in the Start menu under "Mirrik".' DarkGray
     Say ''
-    Say '  The hotkey only works while the shortcut stays in the Start menu - moving' DarkGray
-    Say '  it to the Desktop is fine, deleting it turns the hotkey off.' DarkGray
+    Say '  The hotkey only works while the shortcut stays in the Start menu. Moving it' DarkGray
+    Say '  to the Desktop is fine; deleting it turns the hotkey off.' DarkGray
 } else {
     Say '  Skipped. You can always start it from:' DarkGray
     Say "    $gui" Gray
@@ -716,7 +717,8 @@ Heading 'Done'
 
 Say '  Open the window        the hotkey, or the Start menu entry' DarkGray
 Say '  From a terminal        mirrik devices / mirrik on <name> / mirrik off' DarkGray
-Say '  Closing the window     leaves the mirror running. `x` stops it.' DarkGray
+Say '  Closing the window     leaves the mirror running in the background.' DarkGray
+Say '                         Press `x` inside the window first to stop it.' DarkGray
 Say ''
 Say '  To undo all of this:' DarkGray
 Say '    powershell -ExecutionPolicy Bypass -File install.ps1 -Uninstall' Gray
