@@ -134,6 +134,30 @@ write_state() {  # persists this run's outcome, overwriting whatever was read ab
     } > "$statefile"
 }
 
+# Prints, never runs, the commands that undo whatever the state file remembers. Same
+# shape as the "to undo all of this" block at the end of a full run, but driven only by
+# MIRRIK_STATE_* - there is no current run to compare it against here, just the last
+# known state, which is exactly what someone who only wants to uninstall needs to see.
+print_state_uninstall() {
+    say "    rm $MIRRIK_STATE_BINDIR/mirrik $MIRRIK_STATE_BINDIR/mirrik-gui"
+    if [ -n "$MIRRIK_STATE_APPS" ] && [ -f "$MIRRIK_STATE_APPS/mirrik.desktop" ]; then
+        say "    rm $MIRRIK_STATE_APPS/mirrik.desktop"
+    fi
+    if [ -n "$MIRRIK_STATE_CONFIG" ] && [ -f "$MIRRIK_STATE_CONFIG" ] \
+       && grep -qFe "$MARK_TEXT" "$MIRRIK_STATE_CONFIG"; then
+        dim "    and delete the '# --- Mirrik ---' block from $MIRRIK_STATE_CONFIG"
+    fi
+    if [ -n "$MIRRIK_STATE_PATH_RC" ]; then
+        dim "    and the same block from $MIRRIK_STATE_PATH_RC (the PATH line)"
+    fi
+    case "$MIRRIK_STATE_KEYBIND_KIND" in
+        gnome)    dim '    and remove "Mirrik" under Settings > Keyboard > Custom Shortcuts' ;;
+        cinnamon) dim '    and remove "Mirrik" under Keyboard > Shortcuts > Custom Shortcuts' ;;
+        xfce)     dim '    and remove it under Settings > Keyboard > Application Shortcuts' ;;
+    esac
+    say "    rm -r $state_dir"
+}
+
 # ---------------------------------------------------------------- 0. what this is
 
 cat <<'BANNER'
@@ -151,6 +175,35 @@ cat <<'BANNER'
   outside your home directory.
 
 BANNER
+
+# ---------------------------------------------------------------- already installed?
+
+# Offered only when the state file points at something that is actually still there,
+# not just "a state file exists" - someone who removed everything by hand but left the
+# state file behind gets treated as a clean install, same as step 3 below already does
+# for the binary search. Runs before any of the usual questions, because someone who
+# only wants the uninstall commands should not have to sit through all of them first to
+# get to a block they could have had immediately.
+if [ -n "$MIRRIK_STATE_BINDIR" ] && [ -x "$MIRRIK_STATE_BINDIR/mirrik" ] \
+   && [ -x "$MIRRIK_STATE_BINDIR/mirrik-gui" ]; then
+    heading 'An existing installation'
+    version="$("$MIRRIK_STATE_BINDIR/mirrik" --version 2>/dev/null | head -n1 || true)"
+    if [ -n "$version" ]; then
+        dim "  Already installed: $version, in $MIRRIK_STATE_BINDIR"
+    else
+        dim "  Already installed in $MIRRIK_STATE_BINDIR"
+    fi
+    say ''
+    say '  1) Update or reinstall - go through the guided setup again'
+    say '  2) Show me how to remove it'
+    if [ "$(choose '  Choice' 1 1 2)" = 2 ]; then
+        say ''
+        print_state_uninstall
+        say ''
+        exit 0
+    fi
+    say ''
+fi
 
 # ---------------------------------------------------------------- 1. runtime needs
 

@@ -598,7 +598,7 @@ test_state_switch_compositor() {
     local home path; read -r home path < <(setup_two_phase_home)
 
     run_installer_once "$home" "$path" "$(a y 1 2 a 1 y)" >/dev/null      # run 1: Hyprland
-    local out; out="$(run_installer_once "$home" "$path" "$(a y 8 2 a y)")"  # run 2: GNOME
+    local out; out="$(run_installer_once "$home" "$path" "1,$(a y 8 2 a y)")"  # run 2: GNOME
     rm -f "$REPO/mirrik" "$REPO/mirrik-gui"
 
     local cfg="$home/.config/hypr/hyprland.conf"
@@ -624,7 +624,7 @@ test_state_switch_bindir() {
     local home path; read -r home path < <(setup_two_phase_home)
 
     run_installer_once "$home" "$path" "$(a y 1 2 a 1 y)" >/dev/null                  # run 1: ~/.local/bin
-    local out; out="$(run_installer_once "$home" "$path" "$home/.local/bin2,y,1,2,a,1")"  # run 2: different bindir, block already there
+    local out; out="$(run_installer_once "$home" "$path" "1,$home/.local/bin2,y,1,2,a,1")"  # run 2: different bindir, block already there
     rm -f "$REPO/mirrik" "$REPO/mirrik-gui"
 
     local problems=()
@@ -645,7 +645,7 @@ test_state_no_false_positive() {
     local home path; read -r home path < <(setup_two_phase_home)
 
     run_installer_once "$home" "$path" "$(a y 1 2 a 1 y)" >/dev/null   # run 1
-    local out; out="$(run_installer_once "$home" "$path" "$(a y 1 2 a 1)")"  # run 2, same choice, block already there
+    local out; out="$(run_installer_once "$home" "$path" "1,$(a y 1 2 a 1)")"  # run 2, same choice, block already there
     rm -f "$REPO/mirrik" "$REPO/mirrik-gui"
 
     local problems=()
@@ -662,7 +662,7 @@ test_state_skip_carries_forward() {
     local home path; read -r home path < <(setup_two_phase_home)
 
     run_installer_once "$home" "$path" "$(a y 8 2 a y)" >/dev/null   # run 1: GNOME set up
-    local out; out="$(run_installer_once "$home" "$path" "$(a y 13 2 a)")"  # run 2: step 5 skipped
+    local out; out="$(run_installer_once "$home" "$path" "1,$(a y 13 2 a)")"  # run 2: step 5 skipped
     rm -f "$REPO/mirrik" "$REPO/mirrik-gui"
 
     local problems=()
@@ -701,7 +701,7 @@ test_state_source_into_new_target() {
     printf 'MIRRIK_STATE_BINDIR=%s\n' "$home/.local/bin" > "$home/.local/state/mirrik/install-state"
 
     path="$stubs:$home/.local/bin:$sysbin"
-    out="$(printf '%s\n' "$(printf '%s' "$home/.local/bin2$(a y 1 2 a 1 y)" | tr ',' '\n')" | env -i \
+    out="$(printf '%s\n' "$(printf '%s' "1,$home/.local/bin2$(a y 1 2 a 1 y)" | tr ',' '\n')" | env -i \
         HOME="$home" PATH="$path" \
         XDG_CONFIG_HOME="$home/.config" XDG_DATA_HOME="$home/.local/share" \
         STUB_LOG="$home/stub.log" SHELL=/bin/bash TERM=dumb \
@@ -724,6 +724,40 @@ test_state_source_into_new_target() {
     rm -rf "$home"
 }
 
+# The actual new path none of the cases above choose: picking "2) show me how to remove
+# it" at the existing-installation menu. Run 1 sets up a Hyprland block, a PATH line and
+# a real binary pair, so run 2's listing has something to show in every category, not
+# just the bindir line.
+test_state_uninstall_shown() {
+    local name='existing-install-shows-uninstall-commands'
+    local home path; read -r home path < <(setup_two_phase_home)
+
+    run_installer_once "$home" "$path" "$(a y 1 2 a 1 y)" >/dev/null
+    local out; out="$(run_installer_once "$home" "$path" "2")"
+    rm -f "$REPO/mirrik" "$REPO/mirrik-gui"
+
+    local cfg="$home/.config/hypr/hyprland.conf"
+    local problems=()
+    grep -q 'An existing installation' <<<"$out" \
+        || problems+=("the existing-installation menu did not appear")
+    grep -qF "rm $home/.local/bin/mirrik $home/.local/bin/mirrik-gui" <<<"$out" \
+        || problems+=("the binary rm command is missing")
+    grep -qF "delete the '# --- Mirrik ---' block from $cfg" <<<"$out" \
+        || problems+=("the config block removal hint is missing")
+    grep -q "rm -r $home/.local/state/mirrik" <<<"$out" \
+        || problems+=("the state directory rm command is missing")
+    grep -q 'Which one are you running' <<<"$out" \
+        && problems+=("ran through the normal setup instead of stopping right after the uninstall block")
+    [ -x "$home/.local/bin/mirrik" ] \
+        || problems+=("the binary was actually deleted - this path only shows commands, it does not run them")
+    [ -f "$cfg" ] && grep -qF -- '--- Mirrik ---' "$cfg" \
+        || problems+=("the config block was actually removed - this path only shows commands")
+    [ -n "${VERBOSE:-}" ] && [ "${#problems[@]}" -gt 0 ] && printf '%s\n' "$out" | tail -25 | sed 's/^/        | /'
+
+    report_case "$name" "${problems[@]}"
+    rm -rf "$home"
+}
+
 a() {  # <desktop:y|n> <wm> <mods> <key> [more answers...]
     local d="$1" wm="$2" mods="$3" key="$4"; shift 4
     local rest=""; for x in "$@"; do rest="$rest,$x"; done
@@ -733,8 +767,8 @@ a() {  # <desktop:y|n> <wm> <mods> <key> [more answers...]
 CASES=(
   "hyprland-append|$(a y 1 2 a 1 y)|check_appended|cfg=.config/hypr/hyprland.conf"
   "over-old-version|$(a y 1 2 a 1 y)|check_replaces_old|cfg=.config/hypr/hyprland.conf;preinstalled=0.0.9"
-  "found-via-state-no-fresh-build|$(a y 1 2 a 1 y)|check_found_via_state|cfg=.config/hypr/hyprland.conf;nobins=1;stateonly=1"
-  "fresh-build-beats-state-decoy|$(a y 1 2 a 1 y)|check_prefers_fresh_over_state|cfg=.config/hypr/hyprland.conf;statedecoy=1"
+  "found-via-state-no-fresh-build|1,$(a y 1 2 a 1 y)|check_found_via_state|cfg=.config/hypr/hyprland.conf;nobins=1;stateonly=1"
+  "fresh-build-beats-state-decoy|1,$(a y 1 2 a 1 y)|check_prefers_fresh_over_state|cfg=.config/hypr/hyprland.conf;statedecoy=1"
   "state-partial-pair-falls-back|n|check_state_ignored_falls_back|nobins=1;statepartial=1"
   "state-non-executable-falls-back|n|check_state_ignored_falls_back|nobins=1;statenoexec=1"
   "state-file-unreadable-falls-back|n|check_state_ignored_falls_back|nobins=1;statefileunreadable=1"
@@ -844,7 +878,7 @@ done
 # different sequences of answers in the same test home instead of just one.
 for fn in test_state_switch_compositor test_state_switch_bindir \
           test_state_no_false_positive test_state_skip_carries_forward \
-          test_state_source_into_new_target; do
+          test_state_source_into_new_target test_state_uninstall_shown; do
     [ -n "$filter" ] && [[ "$fn" != *"$filter"* ]] && continue
     "$fn"
 done
