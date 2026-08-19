@@ -219,9 +219,11 @@ alone — appending to those would only last until the next rebuild anyway.
 
 There's no `--uninstall` flag here on purpose — this script only ever shows you commands to
 run yourself, it never removes anything on your behalf. What it *does* do is remember
-exactly what it wrote (in a small state file, nothing fancy), so when it's done it can print
-you the precise commands for *your* setup instead of a generic guess. A typical run ends
-with something like this:
+exactly what it wrote (in a small state file, nothing fancy), so it can print you the precise
+commands for *your* setup instead of a generic guess. Run it again later and, if it finds a
+working install, it asks right away whether you want to update it or just see those commands
+— no need to sit through the whole guided flow again for something you already have. A
+typical uninstall block looks like this:
 
 ```sh
 rm ~/.local/bin/mirrik ~/.local/bin/mirrik-gui
