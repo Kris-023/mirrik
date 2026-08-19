@@ -59,10 +59,10 @@ version_ge() {  # version_ge <have> <want>  -> 0 if have >= want
     [ "$(printf '%s\n%s\n' "$2" "$1" | sort -V | head -n1)" = "$2" ]
 }
 
-# Picks from a fixed list. Type something that's not on the list and we just ask again -
-# we never want a typo to quietly turn into a choice nobody actually made. An empty
-# answer takes the default, which is what pressing Enter (or hitting an early end of
-# stdin) is supposed to do anyway.
+# Picks from a fixed list. Type something that's not on the list and we just ask again.
+# A typo should never quietly turn into a choice nobody actually made. An empty answer
+# takes the default. That's what pressing Enter is supposed to do anyway, and it's also
+# what happens if stdin ends early.
 choose() {  # choose <question> <default> <allowed...>
     local question="$1" default="$2"; shift 2
     local answer allowed=("$@") v
@@ -141,7 +141,7 @@ cat <<'BANNER'
   M I R R I K
   Play the same sound on two or more output devices at once.
 
-  This script will, asking before each step:
+  This script does four things, asking before each one:
     1. check that everything Mirrik needs at runtime is present
     2. install mirrik and mirrik-gui into a directory on your PATH
     3. add a desktop entry so it shows up in your application launcher
@@ -157,7 +157,7 @@ BANNER
 heading '1. What Mirrik needs to be there'
 
 # Mirrik drives PipeWire through its own command line tools rather than linking against
-# libpipewire, so these four have to exist. They are easy to miss: a system can be running
+# libpipewire, so these four have to exist. They're easy to miss. A system can run
 # PipeWire perfectly and still not have pw-cli installed, because several distributions
 # split the daemon and its tools into separate packages.
 missing=()
@@ -252,25 +252,78 @@ else
 fi
 
 # The window is OpenGL, and eframe loads GL, Wayland and xkbcommon with dlopen rather
-# than linking them - `ldd mirrik-gui` lists libc and little else, so a missing one stays
-# invisible until the window refuses to open. The command line half does not care, which
-# is why this warns instead of stopping.
+# than linking them. `ldd mirrik-gui` lists libc and little else, so a missing one stays
+# invisible until the window refuses to open. The command line half doesn't care about
+# any of this, which is why this only warns instead of stopping the install.
 if [ -n "${WAYLAND_DISPLAY:-}${DISPLAY:-}" ] && have ldconfig; then
+    # Captured once into a variable and matched with a plain `case`, not piped straight
+    # into `grep -q`. With `set -o pipefail` on, a `grep -q` that finds its match early
+    # closes its end of the pipe - and on a system with a big ld.so.cache (multilib, a
+    # lot of packages installed), ldconfig is usually still writing when that happens.
+    # It gets SIGPIPE, and under pipefail that SIGPIPE decides the pipeline's exit
+    # status, not grep's own success. The result: a library that is very much installed
+    # gets reported as missing, and which ones get hit depends on cache size and where
+    # they happen to sit in it. Measured failing on a real desktop with ~3000 cache
+    # entries; a `$(...)` capture has no reader to close early, so it cannot happen.
+    ldconfig_cache="$(ldconfig -p 2>/dev/null)"
     gui_missing=()
     for lib in libGL.so.1 libxkbcommon.so.0; do
-        ldconfig -p 2>/dev/null | grep -q "$lib" || gui_missing+=("$lib")
+        case "$ldconfig_cache" in
+            *"$lib"*) ;;
+            *) gui_missing+=("$lib") ;;
+        esac
     done
     if [ -n "${WAYLAND_DISPLAY:-}" ]; then
-        ldconfig -p 2>/dev/null | grep -q libwayland-client.so.0 || gui_missing+=(libwayland-client.so.0)
+        case "$ldconfig_cache" in
+            *libwayland-client.so.0*) ;;
+            *) gui_missing+=(libwayland-client.so.0) ;;
+        esac
     else
-        ldconfig -p 2>/dev/null | grep -q libX11.so.6 || gui_missing+=(libX11.so.6)
+        case "$ldconfig_cache" in
+            *libX11.so.6*) ;;
+            *) gui_missing+=(libX11.so.6) ;;
+        esac
     fi
     if [ ${#gui_missing[@]} -gt 0 ]; then
         say ''
-        warn "  The window needs these at runtime and they are not installed: ${gui_missing[*]}"
-        dim '  They are loaded on demand, so nothing complains until the window opens and'
-        dim '  then does not. The command line half works either way.'
-        dim '  Look for packages named mesa or libglvnd, libxkbcommon, and libwayland.'
+        warn "  The GUI window needs these libraries, and they are not installed: ${gui_missing[*]}"
+        dim '  Nothing checks for them until you actually open the window - they only get'
+        dim '  loaded at that point, so this is the first and only warning you get before'
+        dim '  the window fails to appear. The command line tools (mirrik devices, mirrik'
+        dim '  on, ...) do not touch any of this, so they work fine whether or not these'
+        dim '  libraries are present.'
+
+        # Same distro_id/distro_like as the PipeWire check above, reused rather than
+        # detected twice. Package names for these four libraries differ enough between
+        # distributions that a single guess would be wrong more often than not.
+        gui_install_hint=''
+        case " $distro_id $distro_like " in
+            *" debian "*|*" ubuntu "*)
+                gui_install_hint='sudo apt install libgl1 libxkbcommon0 libwayland-client0 libx11-6' ;;
+            *" fedora "*|*" rhel "*|*" centos "*)
+                gui_install_hint='sudo dnf install mesa-libGL libxkbcommon wayland libX11' ;;
+            *" arch "*|*" archlinux "*|*" manjaro "*|*" endeavouros "*)
+                gui_install_hint='sudo pacman -S --needed mesa libxkbcommon wayland libx11' ;;
+            *" suse "*|*" opensuse "*|*" opensuse-tumbleweed "*|*" opensuse-leap "*)
+                gui_install_hint='sudo zypper install Mesa-libGL1 libxkbcommon0 libwayland-client0 libX11-6' ;;
+            *" alpine "*)
+                gui_install_hint='sudo apk add mesa-gl libxkbcommon wayland-libs-client libx11' ;;
+            *" void "*)
+                gui_install_hint='sudo xbps-install -S MesaLib libxkbcommon libwayland libX11' ;;
+            *" gentoo "*)
+                gui_install_hint='sudo emerge media-libs/mesa x11-libs/libxkbcommon dev-libs/wayland x11-libs/libX11' ;;
+        esac
+        if [ -e /run/ostree-booted ] && have rpm-ostree; then
+            gui_install_hint='sudo rpm-ostree install mesa-libGL libxkbcommon wayland libX11'
+        fi
+
+        if [ -n "$gui_install_hint" ]; then
+            say ''
+            dim "  On $distro_name that is:"
+            say "    $gui_install_hint"
+        else
+            dim '  Look for packages named mesa or libglvnd, libxkbcommon, and libwayland.'
+        fi
     fi
 fi
 
@@ -285,14 +338,14 @@ if have pactl; then
 
         # Here's why we care about the exact version: Mirrik hooks its loopbacks onto a
         # device with `target.object`, a property that only exists from PipeWire 0.3.64
-        # onwards. On anything older it was called `node.target` instead, and paired
-        # with `node.dont-reconnect` an old version just quietly refuses to connect -
-        # no error, no sound, nothing to go on. Way better to catch that now than to
-        # leave someone wondering why nothing happens after they press the hotkey.
+        # onwards. On anything older it was called `node.target` instead. Pair that with
+        # `node.dont-reconnect` and an old version just quietly refuses to connect: no
+        # error, no sound, nothing to go on. Way better to catch that now than to leave
+        # someone wondering why nothing happens after they press the hotkey.
         # One detail that matters: the `|| true` at the end isn't just for show. grep
-        # exits 1 when it finds nothing, and since we're running under `set -e`, that
-        # would kill this assignment (and the whole script with it). Without it, a
-        # server that doesn't report a version number would silently kill the installer.
+        # exits 1 when it finds nothing, and we're running under `set -e`, so that would
+        # kill this assignment, and the whole script with it. Without it, a server that
+        # doesn't report a version number would silently kill the installer.
         pw_version="$(printf '%s' "$server" | grep -oiE 'pipewire[ -]*[0-9]+(\.[0-9]+)+' | grep -oE '[0-9]+(\.[0-9]+)+' | head -n1 || true)"
         if [ -z "$pw_version" ] && have pw-cli; then
             pw_version="$(pw-cli --version 2>/dev/null | grep -oE '[0-9]+(\.[0-9]+)+' | head -n1 || true)"
@@ -306,7 +359,7 @@ if have pactl; then
             warn "  PipeWire $pw_version is too old. Mirrik needs 0.3.64 or newer."
             say ''
             dim '  Mirrik attaches its loopback with `target.object`, which older versions'
-            dim '  do not know. They do not report an error - the mirror simply never'
+            dim '  do not know. They do not report an error. The mirror simply never'
             dim '  connects, and nothing plays on the second device.'
             dim '  Ubuntu 22.04 and Debian bullseye ship older versions; a backport or a'
             dim '  newer release fixes this.'
@@ -325,7 +378,7 @@ if have pactl; then
         say ''
         dim '  Mirrik requires PipeWire and refuses to run on plain PulseAudio. That is'
         dim '  deliberate: there, a loopback belongs to the daemon and would survive a'
-        dim '  crash of this tool - which breaks its one promise, that switching off'
+        dim '  crash of this tool. That breaks its one promise, that switching off'
         dim '  leaves nothing behind.'
         say ''
         dim '  Most distributions can swap PulseAudio for PipeWire without touching'
@@ -335,7 +388,7 @@ if have pactl; then
         confirm '  Install anyway?' n || exit 1
     fi
 else
-    warn '  pactl is not installed, so the audio server cannot be identified. Skipping.'
+    warn '  pactl is not installed, so this cannot tell what your audio server is. Skipping.'
 fi
 
 # ---------------------------------------------------------------- 3. binaries
@@ -344,13 +397,13 @@ heading '3. The program itself'
 
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source_dir=''
-# We look in release builds, the script's own folder, and - as a last resort - wherever a
+# We look in release builds, the script's own folder, and, as a last resort, wherever a
 # previous run of this very installer left things, via the state file read further above.
 # That covers the case where someone reruns this script from a bare clone with nothing
-# built yet, while Mirrik is already sitting in ~/.local/bin from before: without this,
+# built yet, while Mirrik is already sitting in ~/.local/bin from before. Without this,
 # the installer would claim it found nothing and offer to build from scratch, even though
-# a working copy is one directory away. `target/debug` stays deliberately off this list -
-# a stray debug build there would get installed over a proper release without anyone
+# a working copy is one directory away. `target/debug` stays deliberately off this list.
+# A stray debug build there would get installed over a proper release without anyone
 # noticing.
 for dir in "$here/target/release" "$here" "$MIRRIK_STATE_BINDIR"; do
     [ -n "$dir" ] || continue
@@ -414,7 +467,7 @@ bindir="$(ask '  Install into' "$HOME/.local/bin")"
 
 # A space in this path causes more trouble than you'd expect. Every compositor's bind
 # line is written unquoted (`exec, /path/mirrik-gui`), and a desktop entry's Exec line
-# has to be quoted by spec whenever it contains a space - miss either one and the
+# has to be quoted by spec whenever it contains a space. Miss either one, and the
 # launcher just reads everything after the space as an argument. Neither problem shows
 # up until someone actually presses the hotkey, so it's worth catching here instead.
 case "$bindir" in
@@ -422,23 +475,23 @@ case "$bindir" in
         warn '  That path contains a space.'
         dim '  The key binding written into your compositor config is not quoted - most'
         dim '  compositors would read everything after the space as an argument, and the'
-        dim '  key would silently do nothing. A path without spaces avoids the whole'
-        dim '  question; ~/.local/bin is the usual one.'
+        dim '  key would silently do nothing. A path without spaces sidesteps the problem'
+        dim '  entirely; ~/.local/bin is the usual one.'
         say ''
         confirm '  Use it anyway?' n || bindir="$HOME/.local/bin"
         ;;
 esac
 # What is already there belongs to the version that is already there: its holder
 # processes carry that version's node names and are matched by its pattern. Install over
-# a running mirror and the new binary cannot recognise the old holders any more - which
-# is exactly what happened when the tool was renamed. So say what is being replaced, and
-# switch it off first. Borrowed from install.ps1, which has done this from the start
+# a running mirror and the new binary can no longer recognise the old holders. That's
+# exactly what happened when the tool was renamed. So say what is being replaced, and
+# switch it off first. Borrowed from install.ps1, which has done this from the start,
 # because Windows refuses to overwrite a running .exe at all.
 #
 # One case needs telling apart from the rest, now that step 3 can find binaries via the
-# state file: if that search landed on the very folder we are about to install into,
+# state file. If that search landed on the very folder we are about to install into,
 # source and target are the same file, not an old version and a new one. `-ef` catches
-# that by inode rather than by comparing paths as text, which stays correct even if one
+# that by inode rather than by comparing paths as text, so it stays correct even if one
 # side has a trailing slash or got here through a symlink.
 same_file=''
 [ -e "$bindir/mirrik" ] && [ "$source_dir/mirrik" -ef "$bindir/mirrik" ] && same_file=1
@@ -470,8 +523,8 @@ case ":$PATH:" in
     *)
         say ''
         warn "  $bindir is not on your PATH."
-        # Naming the right file matters more than it looks: told "your shell startup
-        # file", people edit .bashrc while running zsh and then wonder.
+        # Naming the right file matters more than it looks. Tell someone "your shell startup
+        # file" and they'll edit .bashrc while running zsh, then wonder why nothing changed.
         case "$(basename "${SHELL:-sh}")" in
             zsh)  rc="$HOME/.zshrc";    line="export PATH=\"\$PATH:$bindir\"" ;;
             fish) rc="${XDG_CONFIG_HOME:-$HOME/.config}/fish/config.fish"
@@ -481,8 +534,8 @@ case ":$PATH:" in
         dim "  Your shell looks like $(basename "${SHELL:-sh}"), so this goes in $rc:"
         say "    $line"
         say ''
-        # Guarded like the compositor configs: run twice in the same terminal - where the
-        # PATH has not been picked up yet - and this would otherwise append twice.
+        # Guarded like the compositor configs. Run this twice in the same terminal, before
+        # the PATH has been picked up, and it would otherwise append twice.
         # path_rc is set in both cases, so the closing summary can name every file that
         # holds a Mirrik block - a block this script wrote earlier counts just as much.
         if [ -f "$rc" ] && grep -qFe "$MARK_TEXT" "$rc"; then
@@ -537,14 +590,15 @@ fi
 
 heading '5. Opening the window with a key'
 
-dim '  This is how Mirrik is meant to be used: one key combination, the window opens'
-dim '  over whatever you were doing, you change a destination, Esc closes it again.'
+dim '  This is how Mirrik is meant to be used: one key combination opens the window'
+dim '  over whatever you were doing. Pick a destination there, then press Esc to'
+dim '  close it again.'
 say ''
-dim '  Your compositor or desktop owns the key bindings, not Mirrik - so this step'
-dim '  works out the right line for your setup and you decide what happens to it.'
+dim '  Your compositor or desktop owns the key bindings, not Mirrik. This step just'
+dim '  works out the right line for your setup; you decide whether to add it.'
 say ''
 
-# A guess, so the menu opens on the likely answer instead of always on 1.
+# A guess, so the menu opens on the likely answer instead of defaulting to 1 every time.
 guess=12
 for probe in "${XDG_CURRENT_DESKTOP:-}" "${DESKTOP_SESSION:-}"; do
     case "${probe,,}" in
@@ -575,7 +629,7 @@ say '     7) bspwm / sxhkd'
 wm="$(choose '  Choice' "$guess" 1 2 3 4 5 6 7 8 9 10 11 12 13)"
 
 if [ "$wm" = 13 ]; then
-    dim '  Skipped. The command to bind, whenever you get to it, is:'
+    dim '  Skipped. Whenever you want to bind a key yourself, this is the command to run:'
     say "    $bindir/mirrik-gui"
     # No opinion this run - carry forward whatever an earlier run already knew, rather
     # than reading "skipped" as "nothing configured" and flagging a still-correct setup
@@ -621,16 +675,16 @@ else
         1)
             config="$conf_home/hypr/hyprland.conf"
             # Wayland compositors place windows themselves, so the rules matter as much as
-            # the binding: without them the window is tiled in with everything else.
-            # `windowrulev2` became `windowrule` in 0.49. The wrong spelling is not a
-            # warning but a config error at startup, so ask hyprctl instead of printing
-            # both and hoping. Without hyprctl, assume current and say so.
+            # the binding. Skip them, and the window just gets tiled in with everything
+            # else. `windowrulev2` became `windowrule` in 0.49, and the wrong spelling
+            # isn't a warning but a config error at startup — so ask hyprctl instead of
+            # printing both and hoping. Without hyprctl, assume current and say so.
             rule_keyword=windowrule
             if have hyprctl; then
                 hypr_version="$(hyprctl version 2>/dev/null | grep -oE 'v?[0-9]+\.[0-9]+(\.[0-9]+)?' | head -n1 | tr -d v || true)"
                 if [ -n "$hypr_version" ] && ! version_ge "$hypr_version" 0.49; then
                     rule_keyword=windowrulev2
-                    note="Hyprland $hypr_version needs windowrulev2, which is what these lines use. 0.49 and newer spell it windowrule."
+                    note="Hyprland $hypr_version needs windowrulev2, and that's what these lines use. 0.49 and newer spell it windowrule instead."
                 fi
             else
                 note="hyprctl was not found, so these lines assume 0.49 or newer. Older versions spell the two rules 'windowrulev2'."
@@ -689,7 +743,7 @@ awful.rules.rules[#awful.rules.rules + 1] = {
     properties = { floating = true, placement = awful.placement.centered },
 }
 $LUA_CLOSE"
-            note="This is Lua, and it uses awesome's newer append API - it sits happily
+            note="This is Lua, and it uses awesome's newer append API. It sits happily
   next to an existing globalkeys table instead of replacing it. Needs
   awesome 4.3 or newer. Append it at the end of rc.lua, after awful is
   required." ;;
@@ -713,8 +767,8 @@ $MARK_CLOSE"
             say "    gsettings set $schema:$path command '$gui'"
             say "    gsettings set $schema:$path binding '$gtk$lower'"
             say ''
-            dim '  ... plus one more to put it in the list of custom shortcuts, which is'
-            dim '  the fiddly part, because that list must not be overwritten.'
+            dim '  ... plus one more to add it to the list of custom shortcuts. That part'
+            dim '  is the fiddly one, because the existing list must not be overwritten.'
             say ''
             if have gsettings && confirm '  Do all of that now?'; then
                 state_keybind_kind=gnome
@@ -745,17 +799,23 @@ $MARK_CLOSE"
             dim '  own schema, with the key combination stored as a list rather than a'
             dim '  string, and with short ids in the list rather than full paths.'
             say ''
-            # The schema was renamed between Cinnamon generations and the documentation
-            # disagrees with itself about which name is current, so ask the machine
-            # instead of picking one. Guessing wrong here fails silently, which is the
+            # The schema was renamed between Cinnamon generations, and the documentation
+            # disagrees with itself about which name is current. So ask the machine
+            # instead of picking one — guessing wrong here fails silently, which is the
             # worst way for a setup step to fail.
             cin=''
             if have gsettings; then
+                # Same fix as the ldconfig check in step 1: captured once so an early
+                # match in `case` cannot SIGPIPE a still-writing gsettings and make
+                # pipefail report a schema that is right there as not found. A desktop
+                # can easily have a few hundred schemas registered.
+                schemas=$'\n'"$(gsettings list-schemas 2>/dev/null)"$'\n'
                 for candidate in org.cinnamon.desktop.keybindings org.cinnamon.keybindings; do
-                    if gsettings list-schemas 2>/dev/null | grep -qx "$candidate"; then
-                        cin="$candidate"
-                        break
-                    fi
+                    case "$schemas" in
+                        *$'\n'"$candidate"$'\n'*)
+                            cin="$candidate"
+                            break ;;
+                    esac
                 done
             fi
 
@@ -819,7 +879,7 @@ $MARK_CLOSE"
             say ''
             dim '  KDE stores shortcuts in a way that is not safe to edit from a script'
             dim '  while Plasma is running - it caches the file and writes it back out.'
-            dim '  So this one is by hand, and it is three clicks:'
+            dim '  So this one is by hand. Three clicks:'
             say ''
             say '    System Settings > Keyboard > Shortcuts > Add > Command'
             say "    Command:   $gui"
@@ -866,8 +926,9 @@ $MARK_CLOSE"
         [ -n "$note" ] && { dim "  $note"; say ''; }
 
         # The question used to ask how the file is maintained ("by hand" vs "generated"),
-        # which reads as "who types this in, you or me?" - the opposite of what it decides.
-        # Ask about the action instead, and let the reasons live in the options.
+        # which reads as "who types this in, you or me?" That's the opposite of what it
+        # actually decides. Ask about the action instead, and let the reasons live in the
+        # options.
         default_choice=1
         if [ ! -f "$config" ]; then
             warn "  $config does not exist."
@@ -911,7 +972,7 @@ $MARK_CLOSE"
     fi
 
     # Ground truth, not "did this run write it": a block left by an earlier run counts
-    # the same as one written just now, and a block that was declined here but already
+    # the same as one written just now. And a block that was declined here but already
     # exists (re-run, "print only" chosen the second time) must not disappear from the
     # undo list either. wm 1-7 are the config-snippet desktops; 8/9/11 set
     # state_keybind_kind themselves, above, only once their write actually ran.
@@ -957,7 +1018,8 @@ heading 'Done'
 
 dim '  Open the window        your key combination, or the launcher entry'
 dim '  From a terminal        mirrik devices / mirrik on <name> / mirrik off'
-dim '  Closing the window     leaves the mirror running. `x` stops it.'
+dim '  Closing the window     leaves the mirror running in the background.'
+dim '                         Press `x` inside the window first to stop it.'
 say ''
 
 # Ground truth for the desktop entry too, same reasoning as state_config above: present
@@ -988,11 +1050,11 @@ case "$state_keybind_kind" in
 esac
 say "    rm -r $state_dir"
 
-# Anything a *different* earlier run left behind - a different install directory, a
+# Anything a *different* earlier run left behind: a different install directory, a
 # different compositor or desktop. Compared by what actually changed (bindir, apps
 # directory, the chosen desktop) rather than by re-deriving strings, and re-checked on
-# disk before being named, so nothing here is claimed on trust alone: someone who
-# already cleaned it up by hand does not get told to clean it up again.
+# disk before being named. Nothing here is claimed on trust alone — someone who already
+# cleaned it up by hand does not get told to clean it up again.
 stale=0
 note_stale() {
     [ "$stale" = 1 ] && return 0

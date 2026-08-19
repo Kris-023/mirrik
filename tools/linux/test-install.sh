@@ -127,19 +127,43 @@ printf 'cargo %s\n' "\$*" >> "\$STUB_LOG"
 exit 0
 EOF
     fi
+    # A fake ld.so.cache dump for the GUI-library check in step 1. The four real libraries
+    # print FIRST, four thousand filler lines AFTER - on purpose, not for realism. That
+    # order is what actually exercises the SIGPIPE-under-pipefail bug this is guarding
+    # against: `grep -q` finding a match on line one, closing the pipe, and the real
+    # ldconfig getting killed by SIGPIPE while it still has thousands of lines left to
+    # write. Put the matches at the end instead and the bug would never trigger, real
+    # ldconfig or fake. STUB_LDCONFIG_MISSING names which of the four to leave out.
+    cat > "$d/ldconfig" <<EOF
+#!/usr/bin/env bash
+[ "\${1:-}" = -p ] || exit 0
+for lib in libGL.so.1 libxkbcommon.so.0 libwayland-client.so.0 libX11.so.6; do
+    case " ${STUB_LDCONFIG_MISSING:-} " in
+        *" \$lib "*) continue ;;
+    esac
+    printf '\t%s (libc6,x86-64) => /usr/lib/%s\n' "\$lib" "\$lib"
+done
+i=0
+while [ "\$i" -lt 4000 ]; do
+    printf '\tlibfiller%d.so.0 (libc6,x86-64) => /usr/lib/libfiller%d.so.0\n' "\$i" "\$i"
+    i=\$((i + 1))
+done
+exit 0
+EOF
     chmod +x "$d"/* 2>/dev/null
     return 0
 }
 
 # opts: cfg= pre=none|empty|marker server= missing=a,b lua=1 nobins=1 nopath=1 repeat=N
 #       hyprversion= preinstalled= cargoversion= stateonly=1 statedecoy=1 statepartial=1
-#       statenoexec=1 statefileunreadable=1
+#       statenoexec=1 statefileunreadable=1 wayland=1 ldconfigmissing=lib
 run_case() {  # <name> <answers> <check-function> [opts]
     local name="$1" answers="$2" check="$3" opts="${4:-}"
     local cfg='' pre='empty' server='PulseAudio (on PipeWire 1.6.8)'
     local missing='' lua='' nobins='' nopath='' repeat=1 pair kv
     local osrelease='' shell_for_case='' hyprversion='' preinstalled='' cargoversion='' stateonly=''
     local statedecoy='' statepartial='' statenoexec='' statefileunreadable=''
+    local wayland='' ldconfigmissing=''
     IFS=';' read -ra kv <<<"$opts"
     for pair in "${kv[@]}"; do
         [ -z "$pair" ] && continue
@@ -152,6 +176,7 @@ run_case() {  # <name> <answers> <check-function> [opts]
             cargoversion) cargoversion="${pair#*=}" ;; stateonly) stateonly=1 ;;
             statedecoy) statedecoy=1 ;; statepartial) statepartial=1 ;;
             statenoexec) statenoexec=1 ;; statefileunreadable) statefileunreadable=1 ;;
+            wayland) wayland=1 ;; ldconfigmissing) ldconfigmissing="${pair#*=}" ;;
         esac
     done
 
@@ -159,6 +184,7 @@ run_case() {  # <name> <answers> <check-function> [opts]
     local stubs="$home/stubs"
     mkdir -p "$home/.config" "$home/.local/bin" "$home/.local/share/applications"
     STUB_HYPR_VERSION="$hyprversion" STUB_CARGO_VERSION="$cargoversion" \
+        STUB_LDCONFIG_MISSING="$ldconfigmissing" \
         make_stubs "$stubs" "$server" ${missing//,/ }
 
     if [ -n "$cfg" ] && [ "$pre" != none ]; then
@@ -254,6 +280,7 @@ EOF
             XDG_CONFIG_HOME="$home/.config" XDG_DATA_HOME="$home/.local/share" \
             STUB_LOG="$home/stub.log" SHELL="${shell_for_case:-/bin/bash}" TERM=dumb \
             ${osrelease:+MIRRIK_OS_RELEASE="$home/os-release"} \
+            ${wayland:+WAYLAND_DISPLAY=wayland-99} \
             bash "$INSTALLER" 2>&1)"
         rc=$?
     done
@@ -468,6 +495,21 @@ check_apt_called()    { installed_ok; grep -q 'sudo apt install pipewire' "$STUB
 check_pacman_called() { installed_ok; grep -q 'sudo pacman -S' "$STUBLOG" 2>/dev/null || echo "pacman was not called"; }
 check_dnf_called()    { installed_ok; grep -q 'sudo dnf install' "$STUBLOG" 2>/dev/null || echo "dnf was not called"; }
 check_nixos_hint()         { installed_ok; grep -q 'services.pipewire' <<<"$OUT" || echo "no NixOS hint"; grep -q 'sudo ' <<<"$OUT" && echo "NixOS got an imperative install command"; return 0; }
+# Regression test for the SIGPIPE-under-pipefail bug: a real ld.so.cache with all four
+# libraries present, but big enough (see the filler lines in the ldconfig stub) that the
+# old `grep -q` piped straight from `ldconfig -p` would have gotten ldconfig SIGPIPE'd
+# and reported a library that is right there as missing. Caught on a real desktop before
+# this test existed - install.sh now captures the cache into a variable first instead.
+check_gui_libs_present_under_load() {
+    installed_ok
+    grep -q 'needs these libraries' <<<"$OUT" && echo "a false positive: all four libraries are present in the stub"
+}
+check_gui_libs_missing_with_hint() {
+    installed_ok
+    grep -q 'needs these libraries' <<<"$OUT" || echo "no warning even though the stub left libxkbcommon out"
+    grep -q 'libxkbcommon.so.0' <<<"$OUT" || echo "the missing library is not named"
+    grep -q 'pacman -S --needed mesa' <<<"$OUT" || echo "no Arch-specific install command for the missing GUI library"
+}
 check_rulev2()  { installed_ok; grep -q 'windowrulev2 = float' <<<"$OUT" || echo "old version did not get windowrulev2"; grep -q 'needs windowrulev2' <<<"$OUT" || echo "no hint about the spelling"; }
 check_rule_new(){
     installed_ok
@@ -748,6 +790,9 @@ CASES=(
   "distro-arch-executed|y,y,,y,1,2,a,1,y|check_pacman_called|missing=pw-cli;osrelease=arch;cfg=.config/hypr/hyprland.conf"
   "distro-fedora-executed|y,y,,y,1,2,a,1,y|check_dnf_called|missing=pw-cli;osrelease=fedora;cfg=.config/hypr/hyprland.conf"
   "distro-nixos|y,,y,1,2,a,1,y|check_nixos_hint|missing=pw-cli;osrelease=nixos;cfg=.config/hypr/hyprland.conf"
+  # --- GUI-library check (step 1): a WAYLAND_DISPLAY session, a stubbed ldconfig
+  "gui-libs-present-under-load|$(a y 1 2 a 1 y)|check_gui_libs_present_under_load|cfg=.config/hypr/hyprland.conf;wayland=1"
+  "gui-libs-missing-with-hint|$(a y 1 2 a 1 y)|check_gui_libs_missing_with_hint|cfg=.config/hypr/hyprland.conf;wayland=1;osrelease=arch;ldconfigmissing=libxkbcommon.so.0"
   "without-binaries-without-cargo||check_abort|nobins=1;missing=cargo"
   "without-binaries-build-declined|n|check_abort|nobins=1"
   # --- MSRV: read from the real copy's Cargo.toml, not duplicated in the test case
