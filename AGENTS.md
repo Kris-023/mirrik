@@ -100,7 +100,7 @@ cargo test --release -p mirrik-core -p mirrik-backend-linux -p mirrik-cli -p mir
 cargo test --release -p mirrik-core -p mirrik-backend-windows -p mirrik-cli -p mirrik-gui
 ```
 
-A bare `cargo test` silently runs only 10 of the 19 tests and reports green — it inherits
+A bare `cargo test` silently runs only 17 of the 26 tests and reports green — it inherits
 `default-members`, so the platform backend's own tests (the interesting ones: volume-scope
 detection, holder/transport logic) are skipped without a warning. `cargo test --workspace` is
 not a fix either; that pulls in the foreign backend and fails to build. Name the four crates.
@@ -117,8 +117,8 @@ project most likely to break silently on a platform nobody just tested by hand. 
 own test bench that fakes the whole environment rather than touching the real system:
 
 ```sh
-tools/linux/test-install.sh         # Linux installer, 161 cases
-pwsh tools/windows/test-install.ps1 # Windows installer, 38 cases, runs fine on Linux via pwsh
+tools/linux/test-install.sh         # Linux installer, 169 cases
+pwsh tools/windows/test-install.ps1 # Windows installer, 41 cases, runs fine on Linux via pwsh
 ```
 
 Both fake every external command they call (`pactl`, `gsettings`, `dbus-send`, the registry,
