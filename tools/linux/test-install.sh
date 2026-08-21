@@ -17,6 +17,14 @@
 set -uo pipefail
 
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+
+# Taken before anything runs, compared at the end. The bench copies stub binaries into
+# the repository root and removes them again, so a leftover there should be nothing at
+# all - and for a long time it was not: a case whose answers had drifted made the
+# installer create a directory called "y" in the working tree, run after run, while
+# staying green. A stray entry means the installer was told something nobody meant, so
+# it is worth failing over rather than sweeping up.
+repo_before="$(ls -A "$REPO")"
 INSTALLER="$REPO/install.sh"
 [ -x "$INSTALLER" ] || { echo "install.sh not found: $INSTALLER" >&2; exit 1; }
 
@@ -155,12 +163,13 @@ EOF
 }
 
 # opts: cfg= pre=none|empty|marker server= missing=a,b lua=1 nobins=1 nopath=1 repeat=N
+#       again=<answers for runs 2..N, when a second run asks something the first did not>
 #       hyprversion= preinstalled= cargoversion= stateonly=1 statedecoy=1 statepartial=1
 #       statenoexec=1 statefileunreadable=1 wayland=1 ldconfigmissing=lib
 run_case() {  # <name> <answers> <check-function> [opts]
     local name="$1" answers="$2" check="$3" opts="${4:-}"
     local cfg='' pre='empty' server='PulseAudio (on PipeWire 1.6.8)'
-    local missing='' lua='' nobins='' nopath='' repeat=1 pair kv
+    local missing='' lua='' nobins='' nopath='' repeat=1 again='' pair kv
     local osrelease='' shell_for_case='' hyprversion='' preinstalled='' cargoversion='' stateonly=''
     local statedecoy='' statepartial='' statenoexec='' statefileunreadable=''
     local wayland='' ldconfigmissing=''
@@ -171,6 +180,7 @@ run_case() {  # <name> <answers> <check-function> [opts]
             cfg) cfg="${pair#*=}" ;; pre) pre="${pair#*=}" ;;
             server) server="${pair#*=}" ;; missing) missing="${pair#*=}" ;;
             lua) lua=1 ;; nobins) nobins=1 ;; nopath) nopath=1 ;; repeat) repeat="${pair#*=}" ;;
+            again) again="${pair#*=}" ;;
             osrelease) osrelease="${pair#*=}" ;; shell) shell_for_case="${pair#*=}" ;;
             hyprversion) hyprversion="${pair#*=}" ;; preinstalled) preinstalled="${pair#*=}" ;;
             cargoversion) cargoversion="${pair#*=}" ;; stateonly) stateonly=1 ;;
@@ -275,7 +285,16 @@ EOF
     local out rc i answer_lines
     answer_lines="$(printf '%s' "$answers" | tr ',' '\n')"
     for ((i = 1; i <= repeat; i++)); do
-        out="$(printf '%s\n' "$answer_lines" | env -i \
+        # Runs after the first get their own answers when a case supplies them: since the
+        # installer learned to open with "update or show me how to remove it", a second
+        # run consumes one answer more than the first.
+        local lines="$answer_lines"
+        [ "$i" -gt 1 ] && [ -n "$again" ] && lines="$(printf '%s' "$again" | tr ',' '\n')"
+        # Run from inside the throwaway home, never from the repository. install.sh finds
+        # everything from its own path, so this changes nothing it can see - but a
+        # relative path (a mistyped answer, or answers that have drifted out of step) then
+        # lands in the temp directory instead of the working tree.
+        out="$(cd "$home" && printf '%s\n' "$lines" | env -i \
             HOME="$home" PATH="$path" \
             XDG_CONFIG_HOME="$home/.config" XDG_DATA_HOME="$home/.local/share" \
             STUB_LOG="$home/stub.log" SHELL="${shell_for_case:-/bin/bash}" TERM=dumb \
@@ -378,6 +397,17 @@ check_xfconf() {
     installed_ok; has_desktop
     grep -q xfconf-query "$STUBLOG" 2>/dev/null || echo "xfconf-query was not called"
 }
+check_installed_twice() {   # two runs into the same home: block once, and the second run
+                            # really went where the first one did
+    check_appended
+    # installed_ok only proves that *something* is in ~/.local/bin, which stays true even
+    # if a later run installed elsewhere. The state file is written by the last run, so it
+    # is the one thing that pins down where run 2 actually put the binaries.
+    local f="$HOME_UNDER_TEST/.local/state/mirrik/install-state"
+    grep -qF "MIRRIK_STATE_BINDIR=$HOME_UNDER_TEST/.local/bin" "$f" 2>/dev/null \
+        || echo "the second run installed somewhere other than the first"
+}
+
 check_state_written() {   # the state file carries the right values for a block case
     check_appended
     local f="$HOME_UNDER_TEST/.local/state/mirrik/install-state"
@@ -586,11 +616,11 @@ check_eof() {   # stdin ends in the middle of the questions
 # of shape, this is its own smaller version of the same idea.
 run_installer_once() {  # <home> <path> <answers>
     local home="$1" path="$2" answers="$3"
-    printf '%s\n' "$(printf '%s' "$answers" | tr ',' '\n')" | env -i \
+    (cd "$home" && printf '%s\n' "$(printf '%s' "$answers" | tr ',' '\n')" | env -i \
         HOME="$home" PATH="$path" \
         XDG_CONFIG_HOME="$home/.config" XDG_DATA_HOME="$home/.local/share" \
         STUB_LOG="$home/stub.log" SHELL=/bin/bash TERM=dumb \
-        bash "$INSTALLER" 2>&1
+        bash "$INSTALLER" 2>&1)
 }
 
 report_case() {  # <name> <problems...>
@@ -922,7 +952,14 @@ CASES=(
   "sway-print|$(a y 2 2 a 2)|check_printed|cfg=.config/sway/config"
   "config-missing|$(a y 1 2 a 2)|check_printed|cfg=.config/hypr/hyprland.conf;pre=none"
   "block-already-there|$(a y 1 2 a 1)|check_untouched|cfg=.config/hypr/hyprland.conf;pre=marker"
-  "installed-twice|$(a y 1 2 a 1 y)|check_appended|cfg=.config/hypr/hyprland.conf;repeat=2"
+  # The second run opens with "update or show me how to remove it", so it needs a 1 in
+  # front - and a comma after it, because a() already starts with an empty field (the
+  # "install into" question, answered by accepting the default). Getting that wrong is
+  # exactly what happened here for a long time: the answers slid by one, the install
+  # directory question got a "y", and run 2 quietly installed into a relative directory
+  # called y/ in the working tree. The case stayed green the whole time, proving nothing
+  # about installing twice into the same place.
+  "installed-twice|$(a y 1 2 a 1 y)|check_installed_twice|cfg=.config/hypr/hyprland.conf;repeat=2;again=1,$(a y 1 2 a 1 y)"
   "lua-detected|$(a y 1 2 a 2)|check_lua_hint|cfg=.config/hypr/hyprland.conf;lua=1"
   # The real bug: a Lua setup usually has no hyprland.conf at all, since nothing ever
   # reads it. This is the case that slipped through before the "does it exist" check
@@ -1020,6 +1057,18 @@ for fn in test_state_switch_compositor test_state_switch_bindir \
     [ -n "$filter" ] && [[ "$fn" != *"$filter"* ]] && continue
     "$fn"
 done
+# Only meaningful for a full run: a filtered one skips the cases that would have created
+# the entry, so reporting a clean tree then would say nothing.
+if [ -z "$filter" ]; then
+    repo_after="$(ls -A "$REPO")"
+    if [ "$repo_before" != "$repo_after" ]; then
+        stray="$(comm -13 <(printf '%s\n' "$repo_before" | sort) <(printf '%s\n' "$repo_after" | sort) | tr '\n' ' ')"
+        report_case 'bench-leaves-the-repository-alone' "left behind in the repo: $stray"
+    else
+        report_case 'bench-leaves-the-repository-alone'
+    fi
+fi
+
 echo
 printf '  %s passed, %s failed\n' "$pass" "$fail"
 [ "$fail" = 0 ] || { printf '  Failed: %s\n' "${failed_names[*]}"; exit 1; }
