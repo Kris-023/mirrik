@@ -119,6 +119,7 @@ state_dir="${XDG_STATE_HOME:-$HOME/.local/state}/mirrik"
 statefile="$state_dir/install-state"
 MIRRIK_STATE_WM=''; MIRRIK_STATE_BINDIR=''; MIRRIK_STATE_APPS=''
 MIRRIK_STATE_PATH_RC=''; MIRRIK_STATE_CONFIG=''; MIRRIK_STATE_KEYBIND_KIND=''
+MIRRIK_STATE_ICONS=''
 # shellcheck disable=SC1090
 [ -r "$statefile" ] && . "$statefile"
 
@@ -128,6 +129,7 @@ write_state() {  # persists this run's outcome, overwriting whatever was read ab
         printf 'MIRRIK_STATE_WM=%q\n' "$state_wm"
         printf 'MIRRIK_STATE_BINDIR=%q\n' "$bindir"
         printf 'MIRRIK_STATE_APPS=%q\n' "$state_apps"
+        printf 'MIRRIK_STATE_ICONS=%q\n' "$state_icons"
         printf 'MIRRIK_STATE_PATH_RC=%q\n' "$path_rc"
         printf 'MIRRIK_STATE_CONFIG=%q\n' "$state_config"
         printf 'MIRRIK_STATE_KEYBIND_KIND=%q\n' "$state_keybind_kind"
@@ -142,6 +144,9 @@ print_state_uninstall() {
     say "    rm $MIRRIK_STATE_BINDIR/mirrik $MIRRIK_STATE_BINDIR/mirrik-gui"
     if [ -n "$MIRRIK_STATE_APPS" ] && [ -f "$MIRRIK_STATE_APPS/mirrik.desktop" ]; then
         say "    rm $MIRRIK_STATE_APPS/mirrik.desktop"
+    fi
+    if [ -n "$MIRRIK_STATE_ICONS" ] && [ -f "$MIRRIK_STATE_ICONS/mirrik.svg" ]; then
+        say "    rm $MIRRIK_STATE_ICONS/mirrik.svg"
     fi
     if [ -n "$MIRRIK_STATE_CONFIG" ] && [ -f "$MIRRIK_STATE_CONFIG" ] \
        && grep -qFe "$MARK_TEXT" "$MIRRIK_STATE_CONFIG"; then
@@ -613,8 +618,12 @@ dim '  file and costs nothing.'
 say ''
 
 apps="${XDG_DATA_HOME:-$HOME/.local/share}/applications"
+# hicolor/scalable ist der Ort, an dem jede Icon-Theme-Implementierung zuerst
+# nachsieht. Der Dateiname muss zur Icon=-Zeile unten passen, und die wiederum
+# zur app id, die das Fenster setzt - sonst findet Wayland kein Bild dazu.
+icons="${XDG_DATA_HOME:-$HOME/.local/share}/icons/hicolor/scalable/apps"
 if confirm '  Add it?'; then
-    mkdir -p "$apps"
+    mkdir -p "$apps" "$icons"
     # Per the Desktop Entry Specification, an Exec path containing a space needs to sit
     # in double quotes - otherwise everything after that space gets treated as an
     # argument instead of part of the path.
@@ -629,12 +638,24 @@ Name=Mirrik
 Comment=Play the same sound on two or more output devices at once
 Exec=$exec_field
 Terminal=false
+Icon=mirrik
 Categories=AudioVideo;Audio;Settings;
 StartupWMClass=mirrik
 Keywords=audio;output;mirror;dual;speakers;headphones;
 DESKTOP
+    # Direkt hier statt aus dem Baum kopiert: install.sh laeuft auch aus einem
+    # Release-Archiv, in dem crates/ gar nicht liegt. Fuer ein Quadrat lohnt
+    # kein Suchpfad. Muss zu tools/make-icons.py passen.
+    cat > "$icons/mirrik.svg" <<'ICON'
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
+  <rect x="4" y="4" width="24" height="24" fill="#ec3013"/>
+</svg>
+ICON
     have update-desktop-database && update-desktop-database "$apps" 2>/dev/null || true
+    have gtk-update-icon-cache \
+        && gtk-update-icon-cache -qtf "$(dirname "$(dirname "$icons")")" 2>/dev/null || true
     ok "  Written to $apps/mirrik.desktop"
+    ok "  Icon written to $icons/mirrik.svg"
 else
     dim '  Skipped.'
 fi
@@ -1083,6 +1104,8 @@ say ''
 # on disk counts, regardless of whether this run wrote it or an earlier one did.
 state_apps=''
 [ -f "$apps/mirrik.desktop" ] && state_apps="$apps"
+state_icons=''
+[ -f "$icons/mirrik.svg" ] && state_icons="$icons"
 
 write_state
 
@@ -1093,6 +1116,9 @@ say "    rm $bindir/mirrik $bindir/mirrik-gui"
 # existed.
 if [ -n "$state_apps" ]; then
     say "    rm $state_apps/mirrik.desktop"
+fi
+if [ -n "$state_icons" ]; then
+    say "    rm $state_icons/mirrik.svg"
 fi
 if [ -n "$state_config" ]; then
     dim "    and delete the '# --- Mirrik ---' block from $state_config"
@@ -1128,6 +1154,11 @@ if [ -n "$MIRRIK_STATE_APPS" ] && [ "$MIRRIK_STATE_APPS" != "$state_apps" ] \
    && [ -f "$MIRRIK_STATE_APPS/mirrik.desktop" ]; then
     note_stale
     say "    rm $MIRRIK_STATE_APPS/mirrik.desktop"
+fi
+if [ -n "$MIRRIK_STATE_ICONS" ] && [ "$MIRRIK_STATE_ICONS" != "$state_icons" ] \
+   && [ -f "$MIRRIK_STATE_ICONS/mirrik.svg" ]; then
+    note_stale
+    say "    rm $MIRRIK_STATE_ICONS/mirrik.svg"
 fi
 if [ -n "$MIRRIK_STATE_WM" ] && [ "$MIRRIK_STATE_WM" != "$state_wm" ]; then
     if [ -n "$MIRRIK_STATE_CONFIG" ] && [ -f "$MIRRIK_STATE_CONFIG" ] \

@@ -168,6 +168,32 @@ fn fatal(message: &str) -> ! {
     std::process::exit(1)
 }
 
+/// Das Fenster-Icon: der Akzent-Chip aus der Oberflaeche selbst, ein Quadrat in
+/// `#ec3013` ueber den mittleren 75 % einer transparenten Flaeche.
+///
+/// Windows und X11 nehmen das hier fuer Titelleiste und Taskleiste. Wayland
+/// ignoriert es und holt das Bild ueber die app id aus mirrik.desktop, weshalb
+/// `install.sh` die Icon-Dateien mitinstalliert.
+///
+/// Gemalt statt geladen: es ist ein Quadrat, und ein PNG-Decoder waere eine
+/// Abhaengigkeit mehr, nur um sechs Zeilen Rechteck zu ersetzen. Muss zu
+/// `tools/make-icons.py` passen - dort stehen dieselben zwei Konstanten.
+fn icon_rgba() -> egui::IconData {
+    const SIZE: usize = 64;
+    const INSET: usize = SIZE / 8; // 12,5 % je Seite -> 75 % Kantenlaenge
+    const ACCENT: [u8; 4] = [0xec, 0x30, 0x13, 0xff];
+
+    let mut rgba = vec![0u8; SIZE * SIZE * 4];
+    for y in INSET..SIZE - INSET {
+        for x in INSET..SIZE - INSET {
+            let i = (y * SIZE + x) * 4;
+            rgba[i..i + 4].copy_from_slice(&ACCENT);
+        }
+    }
+    egui::IconData { rgba, width: SIZE as u32, height: SIZE as u32 }
+}
+
+
 fn main() {
     // A second press of the key combination used to stack a second window on top of the
     // first. Nothing here raises the window that is already open — that would need a
@@ -214,8 +240,10 @@ fn main() {
             // what WASAPI wants. The two are incompatible and winit panics on the clash.
             .with_drag_and_drop(false)
             // Read by window rules as `class` (Wayland/X11) and used as the window class
-            // on Windows.
-            .with_app_id("mirrik"),
+            // on Windows. Also the name a Linux desktop uses to find mirrik.desktop,
+            // and through it the installed icon.
+            .with_app_id("mirrik")
+            .with_icon(icon_rgba()),
         ..Default::default()
     };
 

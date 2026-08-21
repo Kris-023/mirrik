@@ -30,12 +30,14 @@ Cargo.toml              workspace manifest, lives in the repository root
 crates/
   core/                  shared model + the MirrorBackend trait every platform implements
   cli/                   command line: mirrik devices/on/off/status/volume/...
-  gui/                   the window: src/main.rs is the app, src/theme.rs is the skin
+  gui/                   the window: src/main.rs is the app, src/theme.rs is the skin,
+                         build.rs embeds assets/icon.ico into the Windows .exe
   backend-linux/         PipeWire, driven through pactl/pw-cli/pw-dump/pw-metadata
   backend-windows/       WASAPI loopback, via the `windows` crate
 install.sh               guided Linux installer, asks before every step
 install.ps1               guided Windows installer, -Uninstall reverses it
-tools/                   test benches for both installers (see "Testing the installers")
+tools/                   test benches for both installers (see "Testing the installers"),
+                         plus make-icons.py, which regenerates the icon files
   linux/                 test-install.sh, the compositor matrix generator, and its generated case file
   windows/               test-install.ps1, its dot-source driver, the real-Windows bench, and the PSScriptAnalyzer settings for all three
 screenshots/             what the window actually looks like - check these for GUI changes
@@ -56,6 +58,7 @@ this file doesn't have, ask rather than guess.
 | Shared logic that isn't platform-specific (device matching, volume math, state file) | `crates/core/src/` |
 | Window layout, keyboard focus, what's drawn | `crates/gui/src/main.rs` |
 | Colours, fonts, the two skins | `crates/gui/src/theme.rs` |
+| The app icon | `tools/make-icons.py` regenerates every format from one definition. Three places read it: `icon_rgba()` in `crates/gui/src/main.rs` (running window on Windows and X11), `crates/gui/build.rs` (the .exe resource, so Explorer and the Start menu), and the `Icon=` line `install.sh` writes (the only route on Wayland). Change one, change all three. |
 | PipeWire-specific behaviour | `crates/backend-linux/src/lib.rs` |
 | WASAPI-specific behaviour | `crates/backend-windows/src/lib.rs` |
 | Linux install/uninstall flow | `install.sh`, tested by `tools/linux/test-install.sh` |
