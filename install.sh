@@ -669,9 +669,9 @@ dim '  file and costs nothing.'
 say ''
 
 apps="${XDG_DATA_HOME:-$HOME/.local/share}/applications"
-# hicolor/scalable ist der Ort, an dem jede Icon-Theme-Implementierung zuerst
-# nachsieht. Der Dateiname muss zur Icon=-Zeile unten passen, und die wiederum
-# zur app id, die das Fenster setzt - sonst findet Wayland kein Bild dazu.
+# hicolor/scalable is where every icon theme implementation looks first. The file
+# name has to match the Icon= line below, and that one has to match the app id the
+# window sets - break any link in that chain and Wayland finds no picture at all.
 icons="${XDG_DATA_HOME:-$HOME/.local/share}/icons/hicolor/scalable/apps"
 if confirm '  Add it?'; then
     mkdir -p "$apps" "$icons"
@@ -694,9 +694,10 @@ Categories=AudioVideo;Audio;Settings;
 StartupWMClass=mirrik
 Keywords=audio;output;mirror;dual;speakers;headphones;
 DESKTOP
-    # Direkt hier statt aus dem Baum kopiert: install.sh laeuft auch aus einem
-    # Release-Archiv, in dem crates/ gar nicht liegt. Fuer ein Quadrat lohnt
-    # kein Suchpfad. Muss zu tools/make-icons.py passen.
+    # Written out here rather than copied from the tree: this script also runs from
+    # a release archive, where crates/ is not there at all. A search path with a
+    # fallback chain is not worth it for a rectangle. Keep in step with
+    # tools/make-icons.py.
     cat > "$icons/mirrik.svg" <<'ICON'
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
   <rect x="4" y="4" width="24" height="24" fill="#ec3013"/>

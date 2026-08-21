@@ -35,7 +35,7 @@ mirrik-backend-linux.workspace = true
 [target.'cfg(target_os = "windows")'.dependencies]
 mirrik-backend-windows.workspace = true
 
-# Nur zum Einbetten von assets/icon.ico als Win32-Resource. Laeuft im
-# build script, landet also nicht im fertigen Programm.
+# Only there to embed assets/icon.ico as a Win32 resource. It runs in the build
+# script, so none of it ends up in the finished program.
 [target.'cfg(windows)'.build-dependencies]
 winresource = "0.1"

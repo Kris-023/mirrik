@@ -168,19 +168,19 @@ fn fatal(message: &str) -> ! {
     std::process::exit(1)
 }
 
-/// Das Fenster-Icon: der Akzent-Chip aus der Oberflaeche selbst, ein Quadrat in
-/// `#ec3013` ueber den mittleren 75 % einer transparenten Flaeche.
+/// The window icon: the same accent chip the interface uses, a square in `#ec3013`
+/// over the middle 75% of a transparent canvas.
 ///
-/// Windows und X11 nehmen das hier fuer Titelleiste und Taskleiste. Wayland
-/// ignoriert es und holt das Bild ueber die app id aus mirrik.desktop, weshalb
-/// `install.sh` die Icon-Dateien mitinstalliert.
+/// Windows and X11 take it from here for the title bar and the taskbar. Wayland
+/// ignores it and looks the picture up by app id in mirrik.desktop instead, which is
+/// why install.sh puts the icon files in place as well.
 ///
-/// Gemalt statt geladen: es ist ein Quadrat, und ein PNG-Decoder waere eine
-/// Abhaengigkeit mehr, nur um sechs Zeilen Rechteck zu ersetzen. Muss zu
-/// `tools/make-icons.py` passen - dort stehen dieselben zwei Konstanten.
+/// Drawn rather than decoded. It is a rectangle, and pulling in a PNG decoder to read
+/// six lines of loop would be one dependency too many. Keep it in step with
+/// tools/make-icons.py - the same two constants live there.
 fn icon_rgba() -> egui::IconData {
     const SIZE: usize = 64;
-    const INSET: usize = SIZE / 8; // 12,5 % je Seite -> 75 % Kantenlaenge
+    const INSET: usize = SIZE / 8; // 12.5% per side -> the square covers 75%
     const ACCENT: [u8; 4] = [0xec, 0x30, 0x13, 0xff];
 
     let mut rgba = vec![0u8; SIZE * SIZE * 4];

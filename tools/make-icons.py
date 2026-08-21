@@ -1,25 +1,26 @@
 #!/usr/bin/env python3
-"""Erzeugt die App-Icons aus einer einzigen Geometrie-Definition.
+"""Builds the app icons from a single definition of the shape.
 
-Das Motiv ist der Akzent-Chip aus dem Fenster selbst: ein Quadrat in #ec3013,
-das die mittleren 75 % einer transparenten Flaeche einnimmt. Transparenter Grund
-statt heller Kachel, damit es auf heller und dunkler Taskbar gleich aussieht.
+The motif is the accent chip the window itself uses: a square in #ec3013 covering the
+middle 75% of a transparent canvas. Transparent rather than a light tile, so it looks
+the same on a light taskbar and a dark one - a tile inverts its character between the
+two, and one of the two always looks wrong.
 
     python3 tools/make-icons.py
 
-Schreibt nach crates/gui/assets/:
-    icon.ico   Multi-Size fuer die Win32-Resource (Explorer, Verknuepfung, Taskbar)
-    icon.png   256x256, Rueckfall fuer Icon-Themes ohne SVG
-    icon.svg   fuer hicolor/scalable unter Linux
+Writes into crates/gui/assets/:
+    icon.ico   multi-size, for the Win32 resource (Explorer, shortcut, taskbar)
+    icon.png   256x256, fallback for icon themes without SVG support
+    icon.svg   for hicolor/scalable on Linux
 
-WICHTIG: `icon_rgba()` in crates/gui/src/main.rs erzeugt dasselbe Motiv zur
-Laufzeit. Wird INSET oder ACCENT hier geaendert, muss es dort mitgezogen werden.
+Keep in step with `icon_rgba()` in crates/gui/src/main.rs, which draws the same shape
+at runtime. Change INSET or ACCENT here and it has to change there too.
 """
 from pathlib import Path
 from PIL import Image, ImageDraw
 
-ACCENT = (236, 48, 19, 255)   # --accent, identisch zur Website
-INSET = 0.125                 # je Seite -> Quadrat nimmt 75 % der Kante ein
+ACCENT = (236, 48, 19, 255)   # --accent, the same value the website uses
+INSET = 0.125                 # per side, so the square covers 75% of the edge
 ICO_SIZES = [16, 24, 32, 48, 64, 128, 256]
 
 OUT = Path(__file__).resolve().parent.parent / "crates" / "gui" / "assets"
@@ -36,7 +37,7 @@ def main() -> None:
     OUT.mkdir(parents=True, exist_ok=True)
     big = square(256)
     big.save(OUT / "icon.png")
-    # Pillow legt alle angeforderten Groessen in eine .ico-Datei.
+    # Pillow packs every requested size into the one .ico file.
     big.save(OUT / "icon.ico", format="ICO",
              sizes=[(s, s) for s in ICO_SIZES])
     pct = INSET * 100
