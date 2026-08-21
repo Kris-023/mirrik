@@ -10,8 +10,8 @@
 //!   * exit code 1 means failure, always
 
 use anyhow::Result;
-use mirrik_core::{find_device, Device, MirrorBackend, Transport, VOLUME_MAX};
 use clap::{Parser, Subcommand};
+use mirrik_core::{find_device, Device, MirrorBackend, Transport, VOLUME_MAX};
 
 #[derive(Parser)]
 #[command(

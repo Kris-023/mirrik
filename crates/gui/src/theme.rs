@@ -50,8 +50,10 @@ pub fn install_fonts(ctx: &egui::Context) {
             &include_bytes!("../assets/JetBrainsMono-Regular.ttf")[..],
         ),
     ] {
-        f.font_data
-            .insert(name.to_owned(), Arc::new(egui::FontData::from_static(bytes)));
+        f.font_data.insert(
+            name.to_owned(),
+            Arc::new(egui::FontData::from_static(bytes)),
+        );
     }
     // JetBrains Mono trails every family as the fallback: it covers far more of Unicode
     // than Archivo, and device names come from the operating system, not from us.
@@ -265,12 +267,7 @@ fn galley(ui: &Ui, job: LayoutJob) -> Arc<egui::Galley> {
 
 /// The wide-tracked uppercase label that opens every section.
 pub fn kicker(ui: &mut Ui, p: &Palette, label: &str) {
-    ui.label(text(
-        label.to_uppercase(),
-        p.body(9.5),
-        p.faint,
-        9.5 * 0.16,
-    ));
+    ui.label(text(label.to_uppercase(), p.body(9.5), p.faint, 9.5 * 0.16));
 }
 
 /// A 2px rule across the full width of the window.
@@ -494,8 +491,10 @@ pub fn device_row(ui: &mut Ui, p: &Palette, row: &Row<'_>) -> Response {
     let meta = galley(ui, meta_job);
 
     let (name_h, meta_h) = (name.size().y, meta.size().y);
-    let (rect, response) =
-        ui.allocate_exact_size(egui::vec2(full, 9.0 + name_h + 2.0 + meta_h + 9.0), Sense::click());
+    let (rect, response) = ui.allocate_exact_size(
+        egui::vec2(full, 9.0 + name_h + 2.0 + meta_h + 9.0),
+        Sense::click(),
+    );
 
     let painter = ui.painter();
     if row.on {
@@ -564,16 +563,31 @@ mod tests {
         let left = rect.left() + 5.0;
         let span = rect.width() - 10.0;
 
-        for (pointer_x, expected) in [(-50.0, 0.0), (5.0, 0.0), (150.0, 0.5), (295.0, 1.0), (999.0, 1.0)] {
+        for (pointer_x, expected) in [
+            (-50.0, 0.0),
+            (5.0, 0.0),
+            (150.0, 0.5),
+            (295.0, 1.0),
+            (999.0, 1.0),
+        ] {
             let v = ((pointer_x - left) / span).clamp(0.0, 1.0);
-            assert!((v - expected).abs() < 0.01, "{pointer_x} gave {v}, wanted {expected}");
+            assert!(
+                (v - expected).abs() < 0.01,
+                "{pointer_x} gave {v}, wanted {expected}"
+            );
         }
 
         // …and the handle, 10px wide, never pokes out of either end.
         for v in [0.0, 0.5, 1.0] {
             let centre = left + span * v;
-            assert!(centre - 5.0 >= rect.left(), "handle hangs off the left at {v}");
-            assert!(centre + 5.0 <= rect.right(), "handle hangs off the right at {v}");
+            assert!(
+                centre - 5.0 >= rect.left(),
+                "handle hangs off the left at {v}"
+            );
+            assert!(
+                centre + 5.0 <= rect.right(),
+                "handle hangs off the right at {v}"
+            );
         }
     }
 }

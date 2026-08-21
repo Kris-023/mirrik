@@ -331,7 +331,11 @@ impl<B: MirrorBackend> Window<B> {
         self.backend.reconcile()?;
         self.devices = self.backend.devices()?;
         self.source = self.backend.default_device()?.id;
-        let running = self.backend.status()?.map(|m| m.targets).unwrap_or_default();
+        let running = self
+            .backend
+            .status()?
+            .map(|m| m.targets)
+            .unwrap_or_default();
 
         // A destination whose device has gone away — headphones switched off, cable
         // pulled — is missing from the device list, and used to vanish from the window
@@ -519,13 +523,12 @@ impl<B: MirrorBackend> Window<B> {
         let name_colour = if live_master { p.accent } else { p.text };
         // Same treatment for a destination whose gain sits in front of the tap — that is
         // a surprise worth one use of the accent.
-        let hint_colour = if live_master || (d.volume_scope == VolumeScope::AffectsMirror
-            && self.mirroring())
-        {
-            p.accent
-        } else {
-            p.faint
-        };
+        let hint_colour =
+            if live_master || (d.volume_scope == VolumeScope::AffectsMirror && self.mirroring()) {
+                p.accent
+            } else {
+                p.faint
+            };
         let bar = if live_master {
             p.accent
         } else if p.mono_ui {
@@ -867,7 +870,9 @@ impl<B: MirrorBackend> Window<B> {
         block(11, 12).show(ui, |ui| {
             ui.spacing_mut().item_spacing.y = 3.0;
             let moving = match self.focus {
-                Focus::Source | Focus::Target(_) => "up/down focus · left/right volume · 1-9 toggle",
+                Focus::Source | Focus::Target(_) => {
+                    "up/down focus · left/right volume · 1-9 toggle"
+                }
                 Focus::Device(_) if self.mirroring() => {
                     "up/down focus · Enter add or remove · 1-9 direct"
                 }
@@ -924,8 +929,12 @@ impl<B: MirrorBackend> Window<B> {
                 });
                 ui.add_space(12.0);
                 ui.vertical(|ui| {
-                    let mut head =
-                        theme::text(title, p.strong(p.head_size()), p.text, p.head_size() * -0.02);
+                    let mut head = theme::text(
+                        title,
+                        p.strong(p.head_size()),
+                        p.text,
+                        p.head_size() * -0.02,
+                    );
                     theme::clip_to(&mut head, text_width);
                     ui.label(head);
                     ui.add_space(5.0);
@@ -976,10 +985,7 @@ impl<B: MirrorBackend> Window<B> {
         // only entry sits on OFF was the plainest contradiction the window ever showed.
         let waiting = self.targets.len() - self.faders().len();
         let counter = if waiting > 0 {
-            format!(
-                "{} active · {waiting} waiting",
-                self.faders().len()
-            )
+            format!("{} active · {waiting} waiting", self.faders().len())
         } else {
             format!(
                 "{} / {} active",
@@ -1014,10 +1020,7 @@ impl<B: MirrorBackend> Window<B> {
             .show(ui, |ui| {
                 for (n, d) in self.selectable().iter().enumerate() {
                     let on = targets.contains(&d.id);
-                    let latency = self
-                        .backend
-                        .target_latency_ms(d)
-                        .unwrap_or(base_latency);
+                    let latency = self.backend.target_latency_ms(d).unwrap_or(base_latency);
                     // Nothing may be reported about a device that is not there: no
                     // latency, no level, no transport. It says what it is waiting for,
                     // and stays switchable — that is the whole point of keeping the row.
