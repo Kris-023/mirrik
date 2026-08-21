@@ -309,8 +309,23 @@ installed_ok() {
     [ -x "$HOME_UNDER_TEST/.local/bin/mirrik-gui" ] || echo "mirrik-gui not installed"
     grep -q 'sees 2 output device' <<<"$OUT" || echo "step 6 did not read the devices"
 }
-has_desktop() { [ -f "$HOME_UNDER_TEST/.local/share/applications/mirrik.desktop" ] || echo ".desktop missing"; }
-no_desktop()  { installed_ok; [ -f "$HOME_UNDER_TEST/.local/share/applications/mirrik.desktop" ] && echo ".desktop written despite declining"; return 0; }
+# The icon is written in the same step as the .desktop, and the Icon= line is what
+# ties the two together - on Wayland that line is the only route to an icon at all.
+# So all three are checked here: half of that step succeeding is still a failure.
+ICON_UNDER_TEST=".local/share/icons/hicolor/scalable/apps/mirrik.svg"
+has_desktop() {
+    local d="$HOME_UNDER_TEST/.local/share/applications/mirrik.desktop"
+    [ -f "$d" ] || { echo ".desktop missing"; return 0; }
+    grep -q '^Icon=mirrik$' "$d"                 || echo ".desktop has no Icon=mirrik line"
+    [ -f "$HOME_UNDER_TEST/$ICON_UNDER_TEST" ]   || echo "icon file missing"
+    return 0
+}
+no_desktop()  {
+    installed_ok
+    [ -f "$HOME_UNDER_TEST/.local/share/applications/mirrik.desktop" ] && echo ".desktop written despite declining"
+    [ -f "$HOME_UNDER_TEST/$ICON_UNDER_TEST" ]                        && echo "icon written despite declining"
+    return 0
+}
 check_appended() {
     installed_ok; has_desktop
     local f="$HOME_UNDER_TEST/$CFG"
@@ -371,6 +386,16 @@ check_state_written() {   # the state file carries the right values for a block 
     grep -qF "MIRRIK_STATE_BINDIR=$HOME_UNDER_TEST/.local/bin" "$f" || echo "bindir not recorded in the state"
     grep -qF "MIRRIK_STATE_CONFIG=$HOME_UNDER_TEST/$CFG" "$f" || echo "config path not recorded in the state"
     grep -qF 'MIRRIK_STATE_APPS=' "$f" || echo "apps directory missing as a key in the state"
+    # Since 0.1.1 the file says which format it is, which version wrote it, and lists
+    # what it actually put on disk. Without the format field an older file cannot be told
+    # apart from a newer one, which is the whole reason it exists.
+    grep -qx 'MIRRIK_STATE_VERSION=1' "$f" || echo "state format version missing"
+    grep -q '^MIRRIK_STATE_INSTALLED_VERSION=' "$f" || echo "installed version missing as a key"
+    grep -qF 'MIRRIK_STATE_FILES=(' "$f" || echo "manifest missing from the state"
+    grep -qF "$HOME_UNDER_TEST/.local/share/applications/mirrik.desktop" "$f" \
+        || echo "the .desktop is not in the manifest"
+    grep -qF "$HOME_UNDER_TEST/.local/share/icons/hicolor/scalable/apps/mirrik.svg" "$f" \
+        || echo "the icon is not in the manifest"
     grep -qF '.local/state/mirrik' <<<"$OUT" || echo "the state file is not named in the closing block"
 }
 check_state_gnome() {   # the state file carries keybind_kind=gnome, no block path
@@ -632,7 +657,10 @@ test_state_switch_bindir() {
     [ -x "$home/.local/bin/mirrik" ] || problems+=("the installation from run 1 is gone - it should stay in place")
     grep -q 'Also still there from an earlier run' <<<"$out" \
         || problems+=("no hint about the old bindir from run 1")
-    grep -qF "rm $home/.local/bin/mirrik $home/.local/bin/mirrik-gui" <<<"$out" \
+    # Since the manifest, each path gets its own rm line - a directory with a space in
+    # it used to produce one combined line that silently meant something else.
+    grep -qF "rm $home/.local/bin/mirrik" <<<"$out" \
+        && grep -qF "rm $home/.local/bin/mirrik-gui" <<<"$out" \
         || problems+=("the rm command for the old bindir is missing or inaccurate")
     [ -n "${VERBOSE:-}" ] && [ "${#problems[@]}" -gt 0 ] && printf '%s\n' "$out" | tail -25 | sed 's/^/        | /'
 
@@ -728,6 +756,107 @@ test_state_source_into_new_target() {
 # it" at the existing-installation menu. Run 1 sets up a Hyprland block, a PATH line and
 # a real binary pair, so run 2's listing has something to show in every category, not
 # just the bindir line.
+test_state_legacy_migrates() {
+    local name='state-legacy-file-migrates-to-manifest'
+    local home path; read -r home path < <(setup_two_phase_home)
+
+    run_installer_once "$home" "$path" "$(a y 1 2 a 1 y)" >/dev/null
+    # Rewrite the state file exactly the way 0.1.0 wrote it: no format version, no
+    # manifest, just the directories. The undo block still has to name every file - that
+    # is what a format version buys you, and this case is the proof.
+    local sf="$home/.local/state/mirrik/install-state"
+    {
+        printf 'MIRRIK_STATE_WM=%s\n'    '1'
+        printf 'MIRRIK_STATE_BINDIR=%s\n' "$home/.local/bin"
+        printf 'MIRRIK_STATE_APPS=%s\n'   "$home/.local/share/applications"
+        printf 'MIRRIK_STATE_ICONS=%s\n'  "$home/.local/share/icons/hicolor/scalable/apps"
+        printf "MIRRIK_STATE_PATH_RC=''\n"
+        printf "MIRRIK_STATE_CONFIG=''\n"
+        printf "MIRRIK_STATE_KEYBIND_KIND=''\n"
+    } > "$sf"
+
+    local out; out="$(run_installer_once "$home" "$path" "2")"
+    rm -f "$REPO/mirrik" "$REPO/mirrik-gui"
+
+    local problems=()
+    grep -qF "rm $home/.local/bin/mirrik" <<<"$out" \
+        || problems+=("the binary is missing after migrating a version-less state file")
+    grep -qF "rm $home/.local/share/applications/mirrik.desktop" <<<"$out" \
+        || problems+=("the .desktop is missing after migrating a version-less state file")
+    grep -qF "rm $home/$ICON_UNDER_TEST" <<<"$out" \
+        || problems+=("the icon is missing after migrating a version-less state file")
+    [ -n "${VERBOSE:-}" ] && [ "${#problems[@]}" -gt 0 ] && printf '%s\n' "$out" | tail -20 | sed 's/^/        | /'
+
+    report_case "$name" "${problems[@]}"
+    rm -rf "$home"
+}
+
+test_state_newer_file_ignored() {
+    local name='state-newer-file-is-not-guessed-at'
+    local home path; read -r home path < <(setup_two_phase_home)
+
+    run_installer_once "$home" "$path" "$(a y 1 2 a 1 y)" >/dev/null
+    # A file from a script we do not know. Naming files out of it would be guessing, so
+    # the removal list must stay empty rather than claim something that may be wrong.
+    local sf="$home/.local/state/mirrik/install-state"
+    {
+        printf 'MIRRIK_STATE_VERSION=%s\n'  '99'
+        printf 'MIRRIK_STATE_BINDIR=%s\n'   "$home/.local/bin"
+        printf "MIRRIK_STATE_APPS=''\n"
+        printf "MIRRIK_STATE_ICONS=''\n"
+        # A manifest that looks perfectly usable. That is the point: the guard has to
+        # refuse it because of the format number, not because there was nothing to read.
+        printf 'MIRRIK_STATE_FILES=(%q %q)\n' \
+            "$home/.local/share/applications/mirrik.desktop" \
+            "$home/$ICON_UNDER_TEST"
+        printf "MIRRIK_STATE_PATH_RC=''\n"
+        printf "MIRRIK_STATE_CONFIG=''\n"
+        printf "MIRRIK_STATE_KEYBIND_KIND=''\n"
+    } > "$sf"
+
+    local out; out="$(run_installer_once "$home" "$path" "2")"
+    rm -f "$REPO/mirrik" "$REPO/mirrik-gui"
+
+    local problems=()
+    grep -qF "rm $home/.local/share/applications/mirrik.desktop" <<<"$out" \
+        && problems+=("named files out of a state file whose format it does not know")
+    grep -q "rm -r $home/.local/state/mirrik" <<<"$out" \
+        || problems+=("the state directory should still be offered, it is ours either way")
+    [ -n "${VERBOSE:-}" ] && [ "${#problems[@]}" -gt 0 ] && printf '%s\n' "$out" | tail -20 | sed 's/^/        | /'
+
+    report_case "$name" "${problems[@]}"
+    rm -rf "$home"
+}
+
+test_state_config_hint() {
+    local name='own-config-is-offered-separately'
+    local home path; read -r home path < <(setup_two_phase_home)
+
+    run_installer_once "$home" "$path" "$(a y 1 2 a 1 y)" >/dev/null
+    local without; without="$(run_installer_once "$home" "$path" "2")"
+
+    # A config Mirrik never wrote. It has to be named, and named as the user's own, not
+    # swept in with our leftovers.
+    mkdir -p "$home/.config/mirrik"
+    printf '# mine\n' > "$home/.config/mirrik/config.toml"
+    local with; with="$(run_installer_once "$home" "$path" "2")"
+    rm -f "$REPO/mirrik" "$REPO/mirrik-gui"
+
+    local problems=()
+    grep -qF "$home/.config/mirrik/config.toml" <<<"$without" \
+        && problems+=("offered to remove a config that does not exist")
+    grep -qF "rm $home/.config/mirrik/config.toml" <<<"$with" \
+        || problems+=("the existing config is not named at all")
+    grep -qF 'Mirrik never wrote that file' <<<"$with" \
+        || problems+=("the config is named but not marked as the user's own")
+    [ -f "$home/.config/mirrik/config.toml" ] \
+        || problems+=("the config was actually deleted - this path only shows commands")
+    [ -n "${VERBOSE:-}" ] && [ "${#problems[@]}" -gt 0 ] && printf '%s\n' "$with" | tail -20 | sed 's/^/        | /'
+
+    report_case "$name" "${problems[@]}"
+    rm -rf "$home"
+}
+
 test_state_uninstall_shown() {
     local name='existing-install-shows-uninstall-commands'
     local home path; read -r home path < <(setup_two_phase_home)
@@ -740,10 +869,17 @@ test_state_uninstall_shown() {
     local problems=()
     grep -q 'An existing installation' <<<"$out" \
         || problems+=("the existing-installation menu did not appear")
-    grep -qF "rm $home/.local/bin/mirrik $home/.local/bin/mirrik-gui" <<<"$out" \
+    # Since the manifest, each path gets its own rm line - a directory with a space in
+    # it used to produce one combined line that silently meant something else.
+    grep -qF "rm $home/.local/bin/mirrik" <<<"$out" \
+        && grep -qF "rm $home/.local/bin/mirrik-gui" <<<"$out" \
         || problems+=("the binary rm command is missing")
     grep -qF "delete the '# --- Mirrik ---' block from $cfg" <<<"$out" \
         || problems+=("the config block removal hint is missing")
+    grep -qF "rm $home/.local/share/applications/mirrik.desktop" <<<"$out" \
+        || problems+=("the .desktop rm command is missing")
+    grep -qF "rm $home/$ICON_UNDER_TEST" <<<"$out" \
+        || problems+=("the icon rm command is missing")
     grep -q "rm -r $home/.local/state/mirrik" <<<"$out" \
         || problems+=("the state directory rm command is missing")
     grep -q 'Which one are you running' <<<"$out" \
@@ -878,7 +1014,9 @@ done
 # different sequences of answers in the same test home instead of just one.
 for fn in test_state_switch_compositor test_state_switch_bindir \
           test_state_no_false_positive test_state_skip_carries_forward \
-          test_state_source_into_new_target test_state_uninstall_shown; do
+          test_state_source_into_new_target test_state_uninstall_shown \
+          test_state_legacy_migrates test_state_newer_file_ignored \
+          test_state_config_hint; do
     [ -n "$filter" ] && [[ "$fn" != *"$filter"* ]] && continue
     "$fn"
 done

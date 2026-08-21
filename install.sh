@@ -117,15 +117,38 @@ append_block() {  # append_block <file> <block> <what to say afterwards>
 # as every other destructive step in this file.
 state_dir="${XDG_STATE_HOME:-$HOME/.local/state}/mirrik"
 statefile="$state_dir/install-state"
+# Format of the state file. 1 is the first numbered one and the first to carry a
+# manifest; a file without the field predates it. Bump this only when an older script
+# would misread the new shape - a field nobody removed or repurposed needs no bump.
+STATE_FORMAT=1
+
+MIRRIK_STATE_VERSION=''; MIRRIK_STATE_INSTALLED_VERSION=''
 MIRRIK_STATE_WM=''; MIRRIK_STATE_BINDIR=''; MIRRIK_STATE_APPS=''
 MIRRIK_STATE_PATH_RC=''; MIRRIK_STATE_CONFIG=''; MIRRIK_STATE_KEYBIND_KIND=''
-MIRRIK_STATE_ICONS=''
+MIRRIK_STATE_ICONS=''; MIRRIK_STATE_FILES=()
 # shellcheck disable=SC1090
 [ -r "$statefile" ] && . "$statefile"
+
+# Everything below reads MIRRIK_STATE_FILES. A file from before the manifest existed
+# does not have it, so we rebuild it here from the directory fields that version wrote -
+# that is the whole point of having a version field at all. And a file from a *newer*
+# script is one we cannot claim to understand, so we say nothing rather than guess.
+state_too_new=0
+if [ -z "$MIRRIK_STATE_VERSION" ]; then
+    [ -n "$MIRRIK_STATE_BINDIR" ] \
+        && MIRRIK_STATE_FILES+=("$MIRRIK_STATE_BINDIR/mirrik" "$MIRRIK_STATE_BINDIR/mirrik-gui")
+    [ -n "$MIRRIK_STATE_APPS" ]  && MIRRIK_STATE_FILES+=("$MIRRIK_STATE_APPS/mirrik.desktop")
+    [ -n "$MIRRIK_STATE_ICONS" ] && MIRRIK_STATE_FILES+=("$MIRRIK_STATE_ICONS/mirrik.svg")
+elif [ "$MIRRIK_STATE_VERSION" -gt "$STATE_FORMAT" ] 2>/dev/null; then
+    state_too_new=1
+    MIRRIK_STATE_FILES=()
+fi
 
 write_state() {  # persists this run's outcome, overwriting whatever was read above
     mkdir -p "$state_dir"
     {
+        printf 'MIRRIK_STATE_VERSION=%q\n' "$STATE_FORMAT"
+        printf 'MIRRIK_STATE_INSTALLED_VERSION=%q\n' "$state_installed_version"
         printf 'MIRRIK_STATE_WM=%q\n' "$state_wm"
         printf 'MIRRIK_STATE_BINDIR=%q\n' "$bindir"
         printf 'MIRRIK_STATE_APPS=%q\n' "$state_apps"
@@ -133,7 +156,38 @@ write_state() {  # persists this run's outcome, overwriting whatever was read ab
         printf 'MIRRIK_STATE_PATH_RC=%q\n' "$path_rc"
         printf 'MIRRIK_STATE_CONFIG=%q\n' "$state_config"
         printf 'MIRRIK_STATE_KEYBIND_KIND=%q\n' "$state_keybind_kind"
+        # The manifest. One entry per file this install actually left on disk, so the
+        # undo block is a loop and a future fifth artefact costs one line up in
+        # mirrik_artifacts, not four scattered edits.
+        printf 'MIRRIK_STATE_FILES=('
+        for _f in ${state_files[@]+"${state_files[@]}"}; do printf '%q ' "$_f"; done
+        printf ')\n'
     } > "$statefile"
+}
+
+# Every file this installer can leave behind, one line each. THIS IS THE PLACE TO
+# EXTEND: the undo block, the state file's manifest and the stale check all read from
+# here, so a fifth artefact costs one line rather than four scattered edits. Entries are
+# only ever claimed once they exist on disk, so a step that was declined costs nothing.
+mirrik_artifacts() {
+    printf '%s\n' \
+        "$bindir/mirrik" \
+        "$bindir/mirrik-gui" \
+        "$apps/mirrik.desktop" \
+        "$icons/mirrik.svg"
+}
+
+# The config file is the user's, never ours - Mirrik only ever reads it. That is exactly
+# why it gets its own line and its own wording instead of being swept up with our own
+# leftovers: somebody who tuned it should be told it is there and then decide, and
+# somebody who never made one should never see the line at all.
+mirrik_config="${XDG_CONFIG_HOME:-$HOME/.config}/mirrik/config.toml"
+print_config_hint() {
+    [ -f "$mirrik_config" ] || return 0
+    say ''
+    dim '  Your own settings are there too. Mirrik never wrote that file, so it is your'
+    dim '  call whether it goes:'
+    say "    rm $(printf '%q' "$mirrik_config")"
 }
 
 # Prints, never runs, the commands that undo whatever the state file remembers. Same
@@ -141,13 +195,9 @@ write_state() {  # persists this run's outcome, overwriting whatever was read ab
 # MIRRIK_STATE_* - there is no current run to compare it against here, just the last
 # known state, which is exactly what someone who only wants to uninstall needs to see.
 print_state_uninstall() {
-    say "    rm $MIRRIK_STATE_BINDIR/mirrik $MIRRIK_STATE_BINDIR/mirrik-gui"
-    if [ -n "$MIRRIK_STATE_APPS" ] && [ -f "$MIRRIK_STATE_APPS/mirrik.desktop" ]; then
-        say "    rm $MIRRIK_STATE_APPS/mirrik.desktop"
-    fi
-    if [ -n "$MIRRIK_STATE_ICONS" ] && [ -f "$MIRRIK_STATE_ICONS/mirrik.svg" ]; then
-        say "    rm $MIRRIK_STATE_ICONS/mirrik.svg"
-    fi
+    for _f in ${MIRRIK_STATE_FILES[@]+"${MIRRIK_STATE_FILES[@]}"}; do
+        [ -e "$_f" ] && say "    rm $(printf '%q' "$_f")"
+    done
     if [ -n "$MIRRIK_STATE_CONFIG" ] && [ -f "$MIRRIK_STATE_CONFIG" ] \
        && grep -qFe "$MARK_TEXT" "$MIRRIK_STATE_CONFIG"; then
         dim "    and delete the '# --- Mirrik ---' block from $MIRRIK_STATE_CONFIG"
@@ -160,6 +210,7 @@ print_state_uninstall() {
         cinnamon) dim '    and remove "Mirrik" under Keyboard > Shortcuts > Custom Shortcuts' ;;
         xfce)     dim '    and remove it under Settings > Keyboard > Application Shortcuts' ;;
     esac
+    print_config_hint
     say "    rm -r $state_dir"
 }
 
@@ -1107,19 +1158,31 @@ state_apps=''
 state_icons=''
 [ -f "$icons/mirrik.svg" ] && state_icons="$icons"
 
+# The manifest, built the same ground-truth way: on disk counts, no matter which run put
+# it there.
+state_files=()
+while IFS= read -r _f; do
+    [ -e "$_f" ] && state_files+=("$_f")
+done < <(mirrik_artifacts)
+
+# Which version ended up on disk. Without it no installer can ever say "you have 0.1.0,
+# this is 0.1.1" or run a migration that depends on knowing which one wrote the state.
+state_installed_version=''
+if [ -x "$bindir/mirrik" ]; then
+    state_installed_version="$("$bindir/mirrik" --version 2>/dev/null | awk 'NR==1{print $NF}')"
+fi
+
 write_state
 
 dim '  To undo all of this:'
-say "    rm $bindir/mirrik $bindir/mirrik-gui"
-# Each of the next lines is named only when it is actually there - listing something
-# nobody touched invites someone to go looking for a file or a block that never
-# existed.
-if [ -n "$state_apps" ]; then
-    say "    rm $state_apps/mirrik.desktop"
-fi
-if [ -n "$state_icons" ]; then
-    say "    rm $state_icons/mirrik.svg"
-fi
+# Straight off the manifest, and each path run through %q - a directory with a space in
+# it used to produce an rm line that silently meant something else.
+for _f in ${state_files[@]+"${state_files[@]}"}; do
+    say "    rm $(printf '%q' "$_f")"
+done
+# The remaining lines are edits in somebody else's file, not files of ours, and each is
+# named only when it is actually there - listing something nobody touched invites
+# someone to go looking for a block that never existed.
 if [ -n "$state_config" ]; then
     dim "    and delete the '# --- Mirrik ---' block from $state_config"
 fi
@@ -1131,6 +1194,7 @@ case "$state_keybind_kind" in
     cinnamon) dim '    and remove "Mirrik" under Keyboard > Shortcuts > Custom Shortcuts' ;;
     xfce)     dim '    and remove it under Settings > Keyboard > Application Shortcuts' ;;
 esac
+print_config_hint
 say "    rm -r $state_dir"
 
 # Anything a *different* earlier run left behind: a different install directory, a
@@ -1145,21 +1209,21 @@ note_stale() {
     dim '  Also still there from an earlier run with different settings:'
     stale=1
 }
-if [ -n "$MIRRIK_STATE_BINDIR" ] && [ "$MIRRIK_STATE_BINDIR" != "$bindir" ] \
-   && [ -x "$MIRRIK_STATE_BINDIR/mirrik" ]; then
+# Comparing manifests catches strictly more than comparing directories did: a changed
+# install location, but also an artefact a later version simply stopped shipping.
+written_this_run() {
+    local needle="$1" f
+    for f in ${state_files[@]+"${state_files[@]}"}; do
+        [ "$f" = "$needle" ] && return 0
+    done
+    return 1
+}
+for _f in ${MIRRIK_STATE_FILES[@]+"${MIRRIK_STATE_FILES[@]}"}; do
+    written_this_run "$_f" && continue
+    [ -e "$_f" ] || continue
     note_stale
-    say "    rm $MIRRIK_STATE_BINDIR/mirrik $MIRRIK_STATE_BINDIR/mirrik-gui"
-fi
-if [ -n "$MIRRIK_STATE_APPS" ] && [ "$MIRRIK_STATE_APPS" != "$state_apps" ] \
-   && [ -f "$MIRRIK_STATE_APPS/mirrik.desktop" ]; then
-    note_stale
-    say "    rm $MIRRIK_STATE_APPS/mirrik.desktop"
-fi
-if [ -n "$MIRRIK_STATE_ICONS" ] && [ "$MIRRIK_STATE_ICONS" != "$state_icons" ] \
-   && [ -f "$MIRRIK_STATE_ICONS/mirrik.svg" ]; then
-    note_stale
-    say "    rm $MIRRIK_STATE_ICONS/mirrik.svg"
-fi
+    say "    rm $(printf '%q' "$_f")"
+done
 if [ -n "$MIRRIK_STATE_WM" ] && [ "$MIRRIK_STATE_WM" != "$state_wm" ]; then
     if [ -n "$MIRRIK_STATE_CONFIG" ] && [ -f "$MIRRIK_STATE_CONFIG" ] \
        && grep -qFe "$MARK_TEXT" "$MIRRIK_STATE_CONFIG"; then

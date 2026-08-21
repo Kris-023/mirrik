@@ -126,6 +126,7 @@ function Invoke-Case {
         [hashtable]$PreShortcuts = @{},
         [string]$PrePath = '',
         [string]$StrayMirrikDir = '',
+        [switch]$PreConfig,
         [switch]$RawAnswers,
         [string]$CargoVersion = '1.99.0'
     )
@@ -175,6 +176,14 @@ function Invoke-Case {
         New-Item -ItemType Directory -Force -Path $existingDir | Out-Null
         New-StubBinary (Join-Path $existingDir 'mirrik.exe') $Preinstalled
         New-StubBinary (Join-Path $existingDir 'mirrik-gui.exe') $Preinstalled
+    }
+
+    # A settings file the user wrote. The installer never creates one, so a case that
+    # wants to see how the uninstaller treats it has to put it there itself.
+    if ($PreConfig) {
+        $cfgDir = Join-Path $appdata 'mirrik'
+        New-Item -ItemType Directory -Force -Path $cfgDir | Out-Null
+        Set-Content -Path (Join-Path $cfgDir 'config.toml') -Value '# mine'
     }
 
     if ($StrayMirrikDir) {
@@ -586,6 +595,43 @@ Invoke-Case -Name 'uninstall-declined-changes-nothing' -Uninstall -RawAnswers -P
         $dir = Join-Path $ctx.LocalAppData 'Programs\Mirrik'
         if (-not (Test-Path $dir)) { $p += 'program folder was removed despite declining' }
         if ($ctx.Out -notmatch 'Nothing was changed') { $p += 'no confirmation that nothing was changed' }
+        return $p
+    }
+
+# The settings file is the user's, never the installer's. So it is asked about on its
+# own, after everything else, and "no" is what happens if you just press enter.
+Invoke-Case -Name 'uninstall-keeps-own-config-by-default' -Uninstall -RawAnswers -Preinstalled '0.1.0' `
+    -PreConfig -Answers @('y', '') -Check {
+        param($ctx)
+        $p = @()
+        $cfg = Join-Path (Join-Path $ctx.AppData 'mirrik') 'config.toml'
+        if (-not (Test-Path $cfg)) { $p += 'the config was removed even though the answer was empty (default is no)' }
+        if ($ctx.Out -notmatch 'Mirrik never wrote that file') { $p += 'the config is not marked as the user own' }
+        $dir = Join-Path $ctx.LocalAppData 'Programs\Mirrik'
+        if (Test-Path $dir) { $p += 'program folder is still there after uninstalling' }
+        return $p
+    }
+
+Invoke-Case -Name 'uninstall-removes-own-config-when-asked' -Uninstall -RawAnswers -Preinstalled '0.1.0' `
+    -PreConfig -Answers @('y', 'y') -Check {
+        param($ctx)
+        $p = @()
+        $cfg = Join-Path (Join-Path $ctx.AppData 'mirrik') 'config.toml'
+        if (Test-Path $cfg) { $p += 'the config is still there despite answering yes' }
+        return $p
+    }
+
+# Nothing installed, but a settings file left over: the program is gone, so there is
+# nothing to remove - saying so and still naming the file is the point.
+Invoke-Case -Name 'uninstall-without-installation-still-names-config' -Uninstall -RawAnswers `
+    -PreConfig -Answers @() -Check {
+        param($ctx)
+        $p = @()
+        if ($ctx.ExitCode -ne 0) { $p += "exit code $($ctx.ExitCode) instead of 0" }
+        if ($ctx.Out -notmatch 'there is nothing to remove') { $p += 'no message that nothing is installed' }
+        if ($ctx.Out -notmatch 'Your own settings are still there') { $p += 'the leftover config is not mentioned' }
+        $cfg = Join-Path (Join-Path $ctx.AppData 'mirrik') 'config.toml'
+        if (-not (Test-Path $cfg)) { $p += 'the config was removed on a run that removes nothing' }
         return $p
     }
 

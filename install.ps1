@@ -200,6 +200,10 @@ if ($Uninstall) {
 
     $entries = (Get-UserPathRaw) -split ';' | Where-Object { $_ -ne '' }
     $state = Join-Path $env:LOCALAPPDATA 'mirrik'
+    # The settings file, if the user ever made one. Deliberately not part of $plan below:
+    # Mirrik only ever reads this file, so it is theirs, and it gets asked about on its
+    # own further down instead of being swept up with our leftovers.
+    $config = Join-Path (Join-Path $env:APPDATA 'mirrik') 'config.toml'
 
     # This works out where it went rather than asking. The shortcut points straight at it;
     # failing that, the PATH entry *is* it; failing both, there is the default. Asking
@@ -235,6 +239,13 @@ if ($Uninstall) {
 
     if ($plan.Count -eq 0) {
         Say '  Nothing of Mirrik is installed here - there is nothing to remove.' Green
+        # Except possibly a settings file. Saying so is the whole point: somebody who
+        # forgot they wrote one should not have to go looking for it.
+        if (Test-Path $config) {
+            Say ''
+            Say "  Your own settings are still there: $config" DarkGray
+            Say '  Mirrik never wrote that file, so it stays unless you remove it.' DarkGray
+        }
         Say ''
         exit 0
     }
@@ -284,6 +295,21 @@ if ($Uninstall) {
         Say "  Deleting $state" DarkGray
         Remove-Item $state -Recurse -Force
         Say '    gone.' Green
+    }
+
+    # Asked separately and last, with "no" as the default. Somebody uninstalling the
+    # program has not necessarily decided to throw away settings they tuned, and this is
+    # the one thing here that was never ours to begin with.
+    if (Test-Path $config) {
+        Say ''
+        Say "  Your own settings are still there: $config" DarkGray
+        Say '  Mirrik never wrote that file, so this one is your call.' DarkGray
+        if (Confirm '  Remove it as well?' $false) {
+            Remove-Item $config -Force
+            Say '    gone.' Green
+        } else {
+            Say '    kept.' DarkGray
+        }
     }
 
     Say ''
