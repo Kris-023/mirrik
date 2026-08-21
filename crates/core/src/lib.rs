@@ -13,6 +13,7 @@
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
 
+pub mod config;
 pub mod instance;
 pub mod state;
 

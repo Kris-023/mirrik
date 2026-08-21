@@ -11,6 +11,7 @@ description = "Shared model and backend trait behind Mirrik's audio mirroring"
 anyhow.workspace = true
 serde.workspace = true
 serde_json.workspace = true
+toml.workspace = true
 
 # Only the single-instance guard needs this, and only on Windows: a named mutex plus the
 # last-error code that tells us somebody already holds it. Win32_Security comes along

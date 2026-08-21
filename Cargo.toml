@@ -33,6 +33,9 @@ rust-version = "1.95"
 anyhow = "1"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+# Only for the optional settings file in core. TOML over JSON because a config a
+# person edits by hand needs comments, and JSON has none.
+toml = { version = "0.9", default-features = false, features = ["parse", "serde"] }
 clap = { version = "4", features = ["derive"] }
 
 mirrik-core = { path = "crates/core" }
