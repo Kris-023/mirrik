@@ -190,9 +190,12 @@ fn icon_rgba() -> egui::IconData {
             rgba[i..i + 4].copy_from_slice(&ACCENT);
         }
     }
-    egui::IconData { rgba, width: SIZE as u32, height: SIZE as u32 }
+    egui::IconData {
+        rgba,
+        width: SIZE as u32,
+        height: SIZE as u32,
+    }
 }
-
 
 fn main() {
     // A second press of the key combination used to stack a second window on top of the
