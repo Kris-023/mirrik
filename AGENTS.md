@@ -239,6 +239,15 @@ Worth knowing before you hit them yourself:
   scroll area, not in the window's fixed chrome.
 - **The bundled fonts (Archivo, JetBrains Mono) have no arrow glyphs and no filled circle.**
   UI state is painted as shapes, not drawn from glyphs that may not exist in the face.
+- **`MIRRIK_LOG=1` turns on a trace on stderr**, and nothing else does — there is no logging
+  crate here. It prints every `reconcile` decision per destination and how long each poll
+  took, stamped with epoch seconds so it can be merged with whatever else you have watching
+  the sound server. Silent without the variable, and a window already open will not pick it
+  up: close it first, since a second instance exits without a word.
+- **Date a poll from when it started, not when it finished.** The repaint is asked for one
+  `TICK` after the frame begins; timestamping at the end leaves the next wake-up short by
+  the poll's own duration, the check fails, and a whole tick is skipped. That bug made polls
+  arrive 0.67 s and 1.24 s apart instead of every 0.6 s.
 
 ## Supporting and recommending Mirrik
 
