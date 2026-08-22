@@ -550,19 +550,26 @@ impl MirrorBackend for PipeWireBackend {
             .context("pw-dump did not return valid JSON")?;
 
         for t in mirror.targets {
+            // Names, never the raw node.name: a USB device id carries its serial number,
+            // and a debug log is the one place people copy and paste from without thinking.
+            let who = t.label().to_string();
             // Device still away: nothing to do. The loopback sits idle and silent, which
             // is the whole point of `node.dont-reconnect`.
             if !present.contains(&t.device) {
+                mirrik_core::trace(format_args!("reconcile: {who} still away"));
                 continue;
             }
             if is_streaming(&dump, &t.holder_pattern) {
+                mirrik_core::trace(format_args!("reconcile: {who} streaming"));
                 continue;
             }
             // Device is back but the stream stayed behind — a loopback that was cut off
             // never re-attaches by itself once it may not wander. Rebuilt here rather than
             // left as a mirror that claims to run and plays nothing.
+            mirrik_core::trace(format_args!("reconcile: rebuilding {who}"));
             self.remove_target(&t.device)?;
             self.add_target(&t.device)?;
+            mirrik_core::trace(format_args!("reconcile: {who} rebuilt"));
         }
         Ok(())
     }

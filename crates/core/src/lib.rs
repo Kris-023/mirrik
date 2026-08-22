@@ -17,6 +17,30 @@ pub mod config;
 pub mod instance;
 pub mod state;
 
+/// Read once, so the poll below does not look at the environment several times a second.
+static TRACE_ON: std::sync::LazyLock<bool> =
+    std::sync::LazyLock::new(|| std::env::var_os("MIRRIK_LOG").is_some());
+
+/// One timestamped line on stderr, but only with `MIRRIK_LOG` set.
+///
+/// Deliberately not a logging crate: there is exactly one question this has to answer —
+/// how long the step from "the device is back" to "the mirror runs again" takes, and
+/// which part of it is slow. Silent by default, so nothing changes for anyone who does
+/// not go looking. Redirect it where you want it: `MIRRIK_LOG=1 mirrik-gui 2>/tmp/m.log`.
+///
+/// The stamp is seconds since the epoch, not seconds since this process started: the
+/// interesting number lives *between* two witnesses — this log and whatever is watching
+/// the sound server from outside — and only a shared clock lets them be merged. Ugly to
+/// read on its own, exact when sorted together with someone else's `date +%s.%N`.
+pub fn trace(msg: impl std::fmt::Display) {
+    if *TRACE_ON {
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default();
+        eprintln!("{}.{:03} mirrik {msg}", now.as_secs(), now.subsec_millis());
+    }
+}
+
 /// Stable identifier of an output device.
 ///
 /// On Linux this is the PipeWire `node.name` (`alsa_output.…`), on Windows the endpoint
