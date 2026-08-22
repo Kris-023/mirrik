@@ -2,7 +2,6 @@
 # Builds every combination of compositor x modifier x config path and runs each one on
 # its own. This isn't a sample of cases - it's the whole set of selection paths.
 set -uo pipefail
-HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 # Each entry: wm number : config file : which branch it takes
 WMS=(
