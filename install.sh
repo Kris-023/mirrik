@@ -122,7 +122,7 @@ statefile="$state_dir/install-state"
 # would misread the new shape - a field nobody removed or repurposed needs no bump.
 STATE_FORMAT=1
 
-MIRRIK_STATE_VERSION=''; MIRRIK_STATE_INSTALLED_VERSION=''
+MIRRIK_STATE_VERSION=''
 MIRRIK_STATE_WM=''; MIRRIK_STATE_BINDIR=''; MIRRIK_STATE_APPS=''
 MIRRIK_STATE_PATH_RC=''; MIRRIK_STATE_CONFIG=''; MIRRIK_STATE_KEYBIND_KIND=''
 MIRRIK_STATE_ICONS=''; MIRRIK_STATE_FILES=()
@@ -133,15 +133,19 @@ MIRRIK_STATE_ICONS=''; MIRRIK_STATE_FILES=()
 # does not have it, so we rebuild it here from the directory fields that version wrote -
 # that is the whole point of having a version field at all. And a file from a *newer*
 # script is one we cannot claim to understand, so we say nothing rather than guess.
-state_too_new=0
 if [ -z "$MIRRIK_STATE_VERSION" ]; then
     [ -n "$MIRRIK_STATE_BINDIR" ] \
         && MIRRIK_STATE_FILES+=("$MIRRIK_STATE_BINDIR/mirrik" "$MIRRIK_STATE_BINDIR/mirrik-gui")
     [ -n "$MIRRIK_STATE_APPS" ]  && MIRRIK_STATE_FILES+=("$MIRRIK_STATE_APPS/mirrik.desktop")
     [ -n "$MIRRIK_STATE_ICONS" ] && MIRRIK_STATE_FILES+=("$MIRRIK_STATE_ICONS/mirrik.svg")
 elif [ "$MIRRIK_STATE_VERSION" -gt "$STATE_FORMAT" ] 2>/dev/null; then
-    state_too_new=1
+    # Only the manifest, not every field: MIRRIK_STATE_BINDIR still has to work for the
+    # "already installed" menu below, which is a coarser question (is *something* there)
+    # that does not depend on knowing the newer format. Naming individual files to remove
+    # would be guessing; knowing there is something to ask about is not.
     MIRRIK_STATE_FILES=()
+    warn "Your state file at $statefile is from a newer version of this script."
+    dim "  Ignoring its file list rather than guessing at a format we do not know."
 fi
 
 write_state() {  # persists this run's outcome, overwriting whatever was read above
@@ -280,7 +284,7 @@ distro_id=''; distro_like=''; distro_name='your distribution'
 # without actually being that distribution. Day to day, it's just /etc/os-release.
 os_release="${MIRRIK_OS_RELEASE:-/etc/os-release}"
 if [ -r "$os_release" ]; then
-    # shellcheck disable=SC1091
+    # shellcheck disable=SC1091,SC1090
     . "$os_release"
     distro_id="${ID:-}"; distro_like="${ID_LIKE:-}"; distro_name="${PRETTY_NAME:-${NAME:-$distro_id}}"
 fi
