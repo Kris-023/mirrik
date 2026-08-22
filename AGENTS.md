@@ -11,7 +11,7 @@ present in a clone); you don't need them to work here.
 - **One line:** mirror the current output's audio to one or more extra devices, in sync, on
   Windows and Linux. No virtual audio device, no background service, off leaves nothing
   behind.
-- **Repo / release:** https://github.com/Kris-023/mirrik · current release `v0.1.0`, MIT.
+- **Repo / release:** https://github.com/Kris-023/mirrik · current release `v0.1.1`, MIT.
 - **Install:** `install.ps1` (Windows) or `install.sh` (Linux) — guided, asks before every
   step. No build required if you grab a release archive instead.
 - **Runs on:** Windows 11/10, Linux with PipeWire (not plain PulseAudio). **Not macOS.** The

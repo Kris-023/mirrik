@@ -2,10 +2,13 @@
 
 **Play the same sound on two or more output devices at once — on Windows and Linux.**
 
-Speakers and headphones running together, or two headsets so you and someone else can watch
-the same film — Mirrik takes whatever your computer is already playing and sends a copy to
-as many outputs as you like. Nothing to install alongside it, no virtual cable to wire up,
-and once you switch it off there's nothing left to clean up.
+Ever wanted to watch a movie with a friend using two pairs of headphones, or keep your
+speakers and headset running at the same time? Mirrik does exactly that. It takes whatever
+is playing on your PC and seamlessly mirrors it to as many audio outputs as you want.
+
+Best of all: it's completely hassle-free. No virtual audio cables to configure, no extra
+drivers to install. Just run it when you need it, and when you close it, your system stays
+exactly as clean as before.
 
 ![The Mirrik window, mirroring to two devices](screenshots/gui-light.png)
 
@@ -13,10 +16,10 @@ and once you switch it off there's nothing left to clean up.
 
 ## So, what does it actually do?
 
-Here's the annoying thing: neither Windows nor Linux lets you send sound to two outputs at
-once. You pick a device, and everything else goes silent. The usual fixes — virtual audio
-cables, Voicemeeter, `combine-sink` — all work by creating a fake device that you then have
-to select, remember is there, and eventually clean up.
+Here's the annoying thing: neither Windows nor Linux lets you natively send sound to two
+outputs at once. The usual fixes — virtual audio cables, Voicemeeter, `combine-sink` — all
+work by creating a fake device that you have to select, remember to manage, and eventually
+clean up.
 
 Mirrik skips all of that. It just listens to whatever your current output is already
 playing and copies that stream to whichever devices you pick. **No virtual device ever gets
@@ -24,7 +27,7 @@ created**, your default output is never touched, and every other program on your
 notices nothing. Turn it off, and there's nothing left over — not a setting, not a leftover
 device, nothing.
 
-You'll like this if you ever want to *watch a film together on two headsets*, *keep your
+You'll love this if you ever want to *watch a film together on two headsets*, *keep your
 speakers and headphones live at the same time*, *share game audio with the person next to
 you*, or *pipe sound into a second room over HDMI*.
 
@@ -46,7 +49,7 @@ is exactly what you want on an OLED panel.
 No setting, no theme picker buried in a menu. Your desktop already knows which one you want,
 so Mirrik just asks it.
 
-> **Heads up on Windows:** the choice gets locked in the moment the window opens. Flipping
+> **Heads up on Windows:** The choice gets locked in the moment the window opens. Flipping
 > your desktop to dark while the window is already up won't repaint it — Windows only tells
 > a program its theme once, at launch. Just close it and open it again. Since this is a
 > window you summon with a key and dismiss with `Esc` anyway, that's barely a hiccup in
@@ -54,7 +57,7 @@ so Mirrik just asks it.
 
 ## Is it going to work on your setup?
 
-| | Supported | Notes |
+| OS / Audio System | Supported | Notes |
 |---|---|---|
 | **Windows 11 / 10** | yes | Uses WASAPI loopback. Nothing to install, no driver, no admin rights needed |
 | **Linux (PipeWire)** | yes | Uses `module-loopback`. PipeWire is required — details below |
@@ -62,8 +65,8 @@ so Mirrik just asks it.
 | **macOS** | not yet | Nobody's written that backend |
 
 You're not limited to two devices, either — mix and match as many as you want. Analogue, USB,
-HDMI and Bluetooth outputs all work together, and if their sample rates don't match, Mirrik
-converts on the fly so you don't have to think about it.
+HDMI, and Bluetooth outputs all work together. If their sample rates don't match, Mirrik
+converts them on the fly so you don't have to think about it.
 
 ## What you get
 
@@ -134,19 +137,18 @@ powershell -ExecutionPolicy Bypass -File install.ps1 -Uninstall    # take it all
 
 The script checks your machine first — Windows version, architecture, and whether you have
 a real display driver, since the window itself is OpenGL and may not open over Remote
-Desktop (the command line still will, though). Once that's clear, it copies both programs, puts them
-on your `PATH`, and offers you a Start menu shortcut with a hotkey attached.
+Desktop (the command line still will, though). Once that's clear, it copies both programs,
+puts them on your `PATH`, and offers you a Start menu shortcut with a hotkey attached.
 
 That hotkey gets double-checked before it's handed to you: once against shortcuts that
-already claim the same combination — Windows just silently gives it to whichever it finds
-first — and once against your keyboard layout, because Windows delivers AltGr as Ctrl+Alt
-behind the scenes. On a German layout, `Ctrl+Alt+Q` would quietly cost you your `@` key for
-as long as the shortcut exists.
+already claim the same combination, and once against your keyboard layout, because Windows
+delivers AltGr as Ctrl+Alt behind the scenes. On a German layout, `Ctrl+Alt+Q` would quietly
+cost you your `@` key for as long as the shortcut exists.
 
 Changed your mind? `-Uninstall` shows you everything it found first — the programs, the
 `PATH` entry, the shortcut, the state folder — and removes all of it after one confirmation.
 A running mirror gets stopped before anything else, since Windows won't let you delete a
-running `.exe` anyway; say no to the confirmation and it leaves everything untouched.
+running `.exe` anyway. Say no to the confirmation and it leaves everything untouched.
 
 <details>
 <summary><b>Prefer doing it by hand?</b></summary>
@@ -206,7 +208,7 @@ distribution (Debian, Ubuntu, Fedora — including the image-based ones on `rpm-
 openSUSE, Alpine, Void, Gentoo, NixOS). From there it installs both binaries, adds a desktop
 entry, and figures out the right key binding for whatever you're running:
 
-| | |
+| Desktop Environment / Window Manager | Setup Method |
 |---|---|
 | **Hyprland, Sway, i3, river, bspwm/sxhkd, awesome** | shows you the exact config lines and offers to append them |
 | **GNOME, Cinnamon, XFCE** | sets it up for you via `gsettings` / `xfconf-query`, if you say yes |
@@ -219,11 +221,10 @@ alone — appending to those would only last until the next rebuild anyway.
 
 There's no `--uninstall` flag here on purpose — this script only ever shows you commands to
 run yourself, it never removes anything on your behalf. What it *does* do is remember
-exactly what it wrote (in a small state file, nothing fancy), so it can print you the precise
-commands for *your* setup instead of a generic guess. Run it again later and, if it finds a
-working install, it asks right away whether you want to update it or just see those commands
-— no need to sit through the whole guided flow again for something you already have. A
-typical uninstall block looks like this:
+exactly what it wrote, so it can print you the precise commands for *your* setup instead of
+a generic guess. Run it again later and, if it finds a working install, it asks right away
+whether you want to update it or just see those commands. A typical uninstall block looks
+like this:
 
 ```sh
 rm ~/.local/bin/mirrik ~/.local/bin/mirrik-gui
@@ -248,8 +249,8 @@ install -Dm755 target/release/mirrik-gui ~/.local/bin/mirrik-gui
 Needs Rust 1.95 or newer (`rustup update` if you're not sure) — that floor comes from
 `egui`/`eframe`, not from anything Mirrik itself does.
 
-Then bind the window to a key — that's really the intended way to use this thing day to
-day. Hyprland, as an example:
+Then bind the window to a key — that's really the intended way to use Mirrik day to day.
+Hyprland, as an example:
 
 ```
 bind = SUPER SHIFT, M, exec, mirrik-gui
@@ -291,11 +292,10 @@ One thing worth remembering: closing the window does **not** stop the mirror. Th
 `x` is for.
 
 `Space` is the shortcut for "the same as yesterday". Mirrik writes down which destinations
-you had on, and offers them again the next time you open the window with nothing running —
-the row says *from last time* and nothing is switched on until you press it. A device from
-that set that isn't plugged in right now is waited for, and joins the moment it shows up —
-but only for as long as the window is open. Nothing of Mirrik runs in the background, so
-nothing can be waiting for you once you close it.
+you had on, and offers them again the next time you open the window with nothing running. A
+device from that set that isn't plugged in right now is waited for, and joins the moment it
+shows up — but only for as long as the window is open. Nothing of Mirrik runs in the
+background, so nothing can be waiting for you once you close it.
 
 ### The command line
 
