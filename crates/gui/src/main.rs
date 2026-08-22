@@ -326,6 +326,7 @@ impl<B: MirrorBackend> Window<B> {
     }
 
     fn refresh(&mut self) -> anyhow::Result<()> {
+        let began = Instant::now();
         // A destination that came back while the window was open is picked up here — this
         // poll is the only thing running, so it is the only place that can notice.
         self.backend.reconcile()?;
@@ -359,7 +360,12 @@ impl<B: MirrorBackend> Window<B> {
         }
 
         self.targets = running.into_iter().map(|t| t.device).collect();
-        self.last_poll = Instant::now();
+        // Dated from when the poll *started*, not when it finished. The repaint is asked
+        // for one TICK after the frame, so counting from the end leaves the next wake-up
+        // a poll's own duration short of TICK, it skips, and the real interval doubles.
+        // Measured: polls arrived 0.67 s or 1.24 s apart instead of every 0.6 s — up to a
+        // second of extra delay before a returned device is noticed.
+        self.last_poll = began;
         let chain = self.focus_chain();
         if !chain.contains(&self.focus) {
             self.focus = Focus::Source;
