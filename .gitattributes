@@ -1,3 +1,9 @@
-# Shell scripts keep LF endings even when checked out on Windows. Cloned with CRLF they
-# fail with "bad interpreter: /usr/bin/env bash^M", which points nowhere near the cause.
+# Everything text-like is stored and checked out with LF. Without this, a file edited on
+# the Windows machine comes back as a whole-file diff that changes nothing but the line
+# endings - it happened to crates/gui/build.rs on 2026-08-22, and it hides the real change.
+# Binary files are detected by content and left alone.
+* text=auto eol=lf
+
+# Redundant since the line above, kept for the reason it names: shell scripts cloned with
+# CRLF fail with "bad interpreter: /usr/bin/env bash^M", which points nowhere near the cause.
 *.sh text eol=lf
