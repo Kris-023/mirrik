@@ -14,7 +14,7 @@ default-members = ["crates/core", "crates/cli", "crates/gui"]
 
 # Kept here so the five crates cannot drift apart on version, edition or licence.
 [workspace.package]
-version = "0.1.0"
+version = "0.1.1"
 edition = "2021"
 license = "MIT"
 repository = "https://github.com/Kris-023/mirrik"

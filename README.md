@@ -111,7 +111,7 @@ a code signing certificate, so Windows will warn about them no matter what (ther
 that below).
 
 ```powershell
-Get-FileHash -Algorithm SHA256 mirrik-0.1.0-windows-x86_64.zip      # Windows
+Get-FileHash -Algorithm SHA256 mirrik-0.1.1-windows-x86_64.zip      # Windows
 ```
 
 ```sh
