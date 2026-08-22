@@ -19,6 +19,8 @@ WMS=(
   "11::tool"
   "12::hint"
   "13::hint"
+  "14::tool-mate"
+  "15::hint"
 )
 printf '%s\n' "# generated $(date '+%F %H:%M') — compositor x modifier x config path"
 for entry in "${WMS[@]}"; do
@@ -35,6 +37,11 @@ for entry in "${WMS[@]}"; do
                 echo "matrix-wm${wm}-mods${mods}-print|,y,$wm,$mods,a,2|check_printed_niri|cfg=$cfg" ;;
             tool)
                 echo "matrix-wm${wm}-mods${mods}-yes|,y,$wm,$mods,a,y|check_tool_called|"
+                echo "matrix-wm${wm}-mods${mods}-no|,y,$wm,$mods,a,n|check_manual_hint|" ;;
+            tool-mate)
+                # Same shape as `tool`, but the "yes" side gets MATE's own check: its
+                # schema uses different key names, and it picks its dconf slot itself.
+                echo "matrix-wm${wm}-mods${mods}-yes|,y,$wm,$mods,a,y|check_mate_keys|"
                 echo "matrix-wm${wm}-mods${mods}-no|,y,$wm,$mods,a,n|check_manual_hint|" ;;
             hint)
                 echo "matrix-wm${wm}-mods${mods}|,y,$wm,$mods,a|check_manual_hint|" ;;

@@ -58,10 +58,22 @@ make_stubs() {  # <bin-dir> <server-name> <missing-tools...>
 exit 0
 EOF
     fi
-    for t in pw-cli pw-dump pw-metadata update-desktop-database dconf; do
+    for t in pw-cli pw-dump pw-metadata update-desktop-database; do
         [[ "$missing" == *" $t "* ]] && continue
         printf '#!/usr/bin/env bash\nexit 0\n' > "$d/$t"
     done
+    # dconf answers `list` for real, because the MATE branch asks it which custom slots
+    # already exist. Reporting one occupied slot is what makes that branch do its two
+    # interesting things: look inside custom0 to see whether it is ours, and then move
+    # on to the first free one. A silent stub would leave both untested.
+    if [[ "$missing" != *" dconf "* ]]; then
+        cat > "$d/dconf" <<'EOF'
+#!/usr/bin/env bash
+printf 'dconf %s\n' "$*" >> "$STUB_LOG"
+[ "${1:-}" = list ] && printf 'custom0/\n'
+exit 0
+EOF
+    fi
     cat > "$d/mirrik" <<'EOF'
 #!/usr/bin/env bash
 if [ "${1:-}" = devices ]; then
@@ -81,12 +93,22 @@ EOF
 #!/usr/bin/env bash
 printf 'gsettings %s
 ' "$*" >> "$STUB_LOG"
+# The real gsettings takes the object path glued to the schema (SCHEMA:PATH) and knows
+# no --path option at all - it answers one with a usage error on stderr and exit 1. We
+# do the same, because a stub that shrugs and answers anyway is how a call that cannot
+# work on a real desktop passes the bench.
+case " $* " in
+    *" --path "*) printf 'Usage:\n  gsettings [--schemadir SCHEMADIR] get SCHEMA[:PATH] KEY\n' >&2; exit 1 ;;
+esac
 case "${1:-}" in
     list-schemas)
         printf '%s
 ' org.gnome.settings-daemon.plugins.media-keys                       org.cinnamon.desktop.keybindings ;;
-    get) printf "@as []
-" ;;
+    # A slot that says it is already ours. Only the MATE branch ever asks for a `name`
+    # (Cinnamon gets an empty custom-list above and never reaches its own lookup), and
+    # answering honestly is what lets a case tell "reused our old slot" apart from
+    # "asked wrongly, got nothing, took a fresh one".
+    get) case "$*" in *" name") printf "'Mirrik'\n" ;; *) printf '@as []\n' ;; esac ;;
 esac
 exit 0
 EOF
@@ -449,6 +471,22 @@ check_tool_called() {   # GNOME/Cinnamon/XFCE set the shortcut through a tool
         || echo "no call that sets mirrik-gui (only queries?)"
     grep -qE 'gsettings set|xfconf-query .*-s ' "$STUBLOG" 2>/dev/null \
         || echo "no writing call (set) in the log"
+}
+check_mate_keys() {   # MATE writes different keys than GNOME, into a slot it picks itself
+    check_tool_called
+    # MATE reads `action`, not `command` - the GNOME/Cinnamon spelling would leave the
+    # shortcut sitting there doing nothing, and nothing else in this bench would notice.
+    grep -qE "gsettings set org\.mate\.control-center\.keybinding:/org/mate/desktop/keybindings/custom[0-9]+/ action .*mirrik-gui$" "$STUBLOG" 2>/dev/null \
+        || echo "no 'action' key set on the MATE schema (the GNOME 'command' spelling?)"
+    grep -qE "org\.mate\.control-center\.keybinding:.* command " "$STUBLOG" 2>/dev/null \
+        && echo "the MATE schema was given a 'command' key, which MATE never reads"
+    # The stubs hand this run one existing slot, custom0, and say it is already called
+    # Mirrik - so a run that asks the right question writes back into custom0. Landing
+    # on custom1 means the lookup came back empty: that is what a wrong `gsettings get`
+    # looks like from outside, silent and one fresh slot per run.
+    grep -qF 'keybindings/custom0/ action' "$STUBLOG" 2>/dev/null \
+        || echo "did not reuse the existing Mirrik slot (custom0) - did the lookup fail silently?"
+    return 0
 }
 check_abort() {
     [ "$RC" = 0 ] && echo "exit code 0, even though an abort was expected"

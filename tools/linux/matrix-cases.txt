@@ -1,4 +1,4 @@
-# generated 2026-08-18 06:17 — compositor x modifier x config path
+# generated 2026-08-22 06:57 — compositor x modifier x config path
 matrix-wm1-mods1-append|,y,1,1,a,1,y|check_appended|cfg=.config/hypr/hyprland.conf
 matrix-wm1-mods1-print|,y,1,1,a,2|check_printed|cfg=.config/hypr/hyprland.conf
 matrix-wm1-mods2-append|,y,1,2,a,1,y|check_appended|cfg=.config/hypr/hyprland.conf
@@ -87,3 +87,15 @@ matrix-wm13-mods1|,y,13,1,a|check_manual_hint|
 matrix-wm13-mods2|,y,13,2,a|check_manual_hint|
 matrix-wm13-mods3|,y,13,3,a|check_manual_hint|
 matrix-wm13-mods4|,y,13,4,a|check_manual_hint|
+matrix-wm14-mods1-yes|,y,14,1,a,y|check_mate_keys|
+matrix-wm14-mods1-no|,y,14,1,a,n|check_manual_hint|
+matrix-wm14-mods2-yes|,y,14,2,a,y|check_mate_keys|
+matrix-wm14-mods2-no|,y,14,2,a,n|check_manual_hint|
+matrix-wm14-mods3-yes|,y,14,3,a,y|check_mate_keys|
+matrix-wm14-mods3-no|,y,14,3,a,n|check_manual_hint|
+matrix-wm14-mods4-yes|,y,14,4,a,y|check_mate_keys|
+matrix-wm14-mods4-no|,y,14,4,a,n|check_manual_hint|
+matrix-wm15-mods1|,y,15,1,a|check_manual_hint|
+matrix-wm15-mods2|,y,15,2,a|check_manual_hint|
+matrix-wm15-mods3|,y,15,3,a|check_manual_hint|
+matrix-wm15-mods4|,y,15,4,a|check_manual_hint|
