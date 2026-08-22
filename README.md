@@ -283,11 +283,19 @@ It's built to be run entirely from the keyboard:
 | `→` `←` or `l` `h` | nudge the focused fader in 5 % steps |
 | `1` … `9` | switch that device on or off directly |
 | `Enter` | on a device: add it, or remove it if it's already active |
+| `Space` | mirror to the set you had on last time (only when nothing is running) |
 | `x` | stop mirroring, everywhere |
 | `Esc` or `q` | close the window — the mirror keeps running |
 
 One thing worth remembering: closing the window does **not** stop the mirror. That's what
 `x` is for.
+
+`Space` is the shortcut for "the same as yesterday". Mirrik writes down which destinations
+you had on, and offers them again the next time you open the window with nothing running —
+the row says *from last time* and nothing is switched on until you press it. A device from
+that set that isn't plugged in right now is waited for, and joins the moment it shows up —
+but only for as long as the window is open. Nothing of Mirrik runs in the background, so
+nothing can be waiting for you once you close it.
 
 ### The command line
 

@@ -19,6 +19,7 @@
 //!   Right / Left, or l / h  adjust the focused slider in 5 % steps
 //!   1 … 9                  toggle that device directly
 //!   Enter                  on a device: add it, or remove it if already active
+//!   Space                  mirror to the set you had on last time
 //!   x                      stop mirroring entirely
 //!   Esc / q                close without changing anything
 //!
@@ -46,6 +47,7 @@ mod theme;
 
 use eframe::egui;
 use mirrik_core::{
+    state::{self, Remembered},
     Capabilities, Device, DeviceId, MirrorBackend, Transport, VolumeScope, VOLUME_MAX,
 };
 use std::time::{Duration, Instant};
@@ -296,6 +298,44 @@ struct Window<B: MirrorBackend> {
     /// restart doing it.
     palette: Palette,
     theme: Option<egui::Theme>,
+    /// The set that was on last time, offered but not applied. Emptied when it is taken
+    /// up, so the offer disappears the moment it has been used.
+    last: Vec<Remembered>,
+    /// Destinations from that set whose device was not there when it was loaded.
+    ///
+    /// In this struct and nowhere else, because nothing of this tool runs in the
+    /// background: a device that comes back is noticed by whoever is running at the time,
+    /// and while this window is open that is the poll below. Close it and the note is
+    /// gone — the row says exactly that instead of promising a service we do not have.
+    pending: Vec<Remembered>,
+}
+
+/// Splits a remembered set into "switch on now" and "wait for it".
+///
+/// Free and pure on purpose: this is the one branch of the feature that can be wrong in a
+/// way nobody sees — a destination silently dropped instead of waited for — and a pure
+/// function can be checked without a sound server.
+fn split_last(
+    last: Vec<Remembered>,
+    source: &DeviceId,
+    targets: &[DeviceId],
+    devices: &[Device],
+) -> (Vec<DeviceId>, Vec<Remembered>) {
+    let mut now = Vec::new();
+    let mut later = Vec::new();
+    for r in last {
+        // Whatever has become the system's own output since cannot be a destination —
+        // mirroring onto itself is a loop. One that already runs is nothing to do either.
+        if r.device == *source || targets.contains(&r.device) {
+            continue;
+        }
+        if devices.iter().any(|d| d.id == r.device && d.present) {
+            now.push(r.device);
+        } else {
+            later.push(r);
+        }
+    }
+    (now, later)
 }
 
 impl<B: MirrorBackend> Window<B> {
@@ -317,8 +357,16 @@ impl<B: MirrorBackend> Window<B> {
             reveal_focus: false,
             palette: Palette::of(egui::Theme::Light),
             theme: None,
+            last: Vec::new(),
+            pending: Vec::new(),
         };
         w.refresh()?;
+        // Only offered while nothing is running: with a mirror already up, "the set from
+        // last time" is not a choice, it is what is on screen.
+        if !w.mirroring() {
+            w.last = state::last();
+            w.inject_absent();
+        }
         if w.selectable().is_empty() {
             anyhow::bail!("only one output device — nothing to mirror to");
         }
@@ -330,8 +378,10 @@ impl<B: MirrorBackend> Window<B> {
         // A destination that came back while the window was open is picked up here — this
         // poll is the only thing running, so it is the only place that can notice.
         self.backend.reconcile()?;
+        let reconciled = began.elapsed();
         self.devices = self.backend.devices()?;
         self.source = self.backend.default_device()?.id;
+        self.attach_pending();
         let running = self
             .backend
             .status()?
@@ -344,33 +394,95 @@ impl<B: MirrorBackend> Window<B> {
         // command line. It is carried here as a device of its own, marked absent, using
         // the name written down when it was switched on.
         for t in &running {
-            if !self.devices.iter().any(|d| d.id == t.device) {
-                self.devices.push(Device {
-                    id: t.device.clone(),
-                    name: t.label().to_string(),
-                    is_default: false,
-                    // Nothing here was measured, and nothing here is shown: `present`
-                    // keeps every reading of this device out of the interface.
-                    volume: 0.0,
-                    volume_scope: VolumeScope::Unknown,
-                    transport: Transport::Other,
-                    present: false,
-                });
-            }
+            let (id, name) = (t.device.clone(), t.label().to_string());
+            self.carry_absent(&id, &name);
         }
 
         self.targets = running.into_iter().map(|t| t.device).collect();
+        self.inject_absent();
+        // The two numbers that tell the slow half apart: how long reconcile took (it may
+        // rebuild a loopback, which sleeps 600 ms on purpose) and how long the whole poll
+        // took, since nothing else can notice a returning device while this window runs.
+        mirrik_core::trace(format_args!(
+            "poll: {:.0} ms ({:.0} ms reconcile) · {} devices · {} on · {} waiting",
+            began.elapsed().as_secs_f32() * 1000.0,
+            reconciled.as_secs_f32() * 1000.0,
+            self.devices.len(),
+            self.targets.len(),
+            self.pending.len(),
+        ));
         // Dated from when the poll *started*, not when it finished. The repaint is asked
         // for one TICK after the frame, so counting from the end leaves the next wake-up
         // a poll's own duration short of TICK, it skips, and the real interval doubles.
-        // Measured: polls arrived 0.67 s or 1.24 s apart instead of every 0.6 s — up to a
-        // second of extra delay before a returned device is noticed.
+        // Measured before this line existed: polls arrived 0.67 s or 1.24 s apart instead
+        // of every 0.6 s — up to a second of extra delay before a returned device is seen.
         self.last_poll = began;
         let chain = self.focus_chain();
         if !chain.contains(&self.focus) {
             self.focus = Focus::Source;
         }
         Ok(())
+    }
+
+    /// Gives a device the system no longer reports a row of its own, so it stays visible
+    /// and switchable. Nothing about it may be presented as measured — `present` sees to
+    /// that, and every reading of this device stays out of the interface.
+    fn carry_absent(&mut self, id: &DeviceId, name: &str) {
+        if self.devices.iter().any(|d| d.id == *id) {
+            return;
+        }
+        self.devices.push(Device {
+            id: id.clone(),
+            name: name.to_string(),
+            is_default: false,
+            volume: 0.0,
+            volume_scope: VolumeScope::Unknown,
+            transport: Transport::Other,
+            present: false,
+        });
+    }
+
+    /// Rows for the offered and the waiting set — a device you cannot see cannot be
+    /// chosen, and both of these are usually devices that are not plugged in right now.
+    fn inject_absent(&mut self) {
+        for r in self.last.clone().into_iter().chain(self.pending.clone()) {
+            self.carry_absent(&r.device, &r.name);
+        }
+    }
+
+    /// Waiting destinations that have appeared since the set was loaded.
+    ///
+    /// This is the whole of the "wait for the headphones" promise, and it holds for as
+    /// long as this window is open, not one moment longer.
+    fn attach_pending(&mut self) {
+        let back: Vec<Remembered> = self
+            .pending
+            .iter()
+            .filter(|r| self.devices.iter().any(|d| d.id == r.device && d.present))
+            .cloned()
+            .collect();
+        for r in back {
+            self.pending.retain(|p| p.device != r.device);
+            if let Err(e) = self.backend.add_target(&r.device) {
+                self.error = Some(format!("{e:#}"));
+            }
+        }
+    }
+
+    /// Space: switch on everything from the last set that is here, note down the rest.
+    fn apply_last(&mut self) {
+        let (now, later) = split_last(
+            std::mem::take(&mut self.last),
+            &self.source,
+            &self.targets,
+            &self.devices,
+        );
+        for id in now {
+            let res = self.backend.add_target(&id);
+            self.apply(res);
+        }
+        self.pending.extend(later);
+        self.inject_absent();
     }
 
     /// The source never appears as a destination — mirroring onto itself is a loop.
@@ -609,6 +721,7 @@ impl<B: MirrorBackend> eframe::App for Window<B> {
         let mut close = false;
         let mut step = 0i32;
         let mut louder = 0.0f32;
+        let mut load_last = false;
 
         // NOTE: no ctx call that locks the context again may appear inside this closure.
         // `ctx.input()` holds the input lock, and a `ctx.send_viewport_cmd()` in here
@@ -655,6 +768,11 @@ impl<B: MirrorBackend> eframe::App for Window<B> {
             }
             if i.key_pressed(egui::Key::X) {
                 stop = true;
+            }
+            // Bound only while there is something to load, so a stray press is never a
+            // key that works on some days and not on others.
+            if i.key_pressed(egui::Key::Space) && !self.last.is_empty() {
+                load_last = true;
             }
         });
 
@@ -792,6 +910,9 @@ impl<B: MirrorBackend> eframe::App for Window<B> {
         } else if stop {
             self.stop();
             ctx.request_repaint();
+        } else if load_last {
+            self.apply_last();
+            ctx.request_repaint();
         }
     }
 }
@@ -886,6 +1007,8 @@ impl<B: MirrorBackend> Window<B> {
             };
             let leaving = if self.mirroring() {
                 "x stop mirroring · Esc close, mirror keeps running"
+            } else if !self.last.is_empty() {
+                "Space mirror to last set · Esc close"
             } else {
                 "Esc close"
             };
@@ -1035,7 +1158,13 @@ impl<B: MirrorBackend> Window<B> {
                     // whoever is running at the time: this window while it is open, or
                     // the next command. Verified the hard way — the mirror stayed down
                     // after the headphones came back on, until the window was reopened.
-                    let mut meta = if !d.present {
+                    let mut meta = if self.pending.iter().any(|r| r.device == d.id) {
+                        // Says what actually happens: this window is the only thing
+                        // watching, so the wait ends when it closes.
+                        "waiting · joins while this window is open".to_string()
+                    } else if self.last.iter().any(|r| r.device == d.id) {
+                        "from last time · Space loads the set".to_string()
+                    } else if !d.present {
                         "device away · resumes when Mirrik runs again".to_string()
                     } else if on {
                         format!("~{latency} ms · {:.0} %", d.volume * 100.0)
@@ -1068,5 +1197,59 @@ impl<B: MirrorBackend> Window<B> {
                 }
             });
         clicked
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn device(id: &str, present: bool) -> Device {
+        Device {
+            id: DeviceId(id.to_string()),
+            name: id.to_string(),
+            is_default: false,
+            volume: 0.5,
+            volume_scope: VolumeScope::Unknown,
+            transport: Transport::Other,
+            present,
+        }
+    }
+
+    fn remembered(id: &str) -> Remembered {
+        Remembered {
+            device: DeviceId(id.to_string()),
+            name: id.to_string(),
+        }
+    }
+
+    #[test]
+    fn a_device_that_is_not_plugged_in_is_waited_for_rather_than_dropped() {
+        let devices = [device("hdmi", true), device("bt", false)];
+        let (now, later) = split_last(
+            vec![remembered("hdmi"), remembered("bt")],
+            &DeviceId("analog".to_string()),
+            &[],
+            &devices,
+        );
+        assert_eq!(now, vec![DeviceId("hdmi".to_string())]);
+        // The name has to survive with it: an absent device can only be named from here.
+        assert_eq!(later.len(), 1);
+        assert_eq!(later[0].name, "bt");
+    }
+
+    #[test]
+    fn nothing_is_mirrored_onto_itself_or_started_twice() {
+        // The default output can have changed since the set was written down, and one of
+        // its destinations can already be running.
+        let devices = [device("hdmi", true), device("bt", true)];
+        let (now, later) = split_last(
+            vec![remembered("hdmi"), remembered("bt")],
+            &DeviceId("hdmi".to_string()),
+            &[DeviceId("bt".to_string())],
+            &devices,
+        );
+        assert!(now.is_empty());
+        assert!(later.is_empty());
     }
 }
