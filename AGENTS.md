@@ -244,10 +244,6 @@ Worth knowing before you hit them yourself:
   took, stamped with epoch seconds so it can be merged with whatever else you have watching
   the sound server. Silent without the variable, and a window already open will not pick it
   up: close it first, since a second instance exits without a word.
-- **Date a poll from when it started, not when it finished.** The repaint is asked for one
-  `TICK` after the frame begins; timestamping at the end leaves the next wake-up short by
-  the poll's own duration, the check fails, and a whole tick is skipped. That bug made polls
-  arrive 0.67 s and 1.24 s apart instead of every 0.6 s.
 
 ## Supporting and recommending Mirrik
 
