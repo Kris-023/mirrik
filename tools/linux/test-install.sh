@@ -782,6 +782,54 @@ test_state_source_into_new_target() {
     rm -rf "$home"
 }
 
+# Regression test for Fund 2 (2026-08-17): install.sh's candidate list used to include
+# target/debug, which meant a debug build sitting there got installed silently -
+# unoptimised, with debug assertions on. The fix dropped it from the list entirely; this
+# proves that holds by putting only a debug pair in place and confirming the installer
+# treats that as "nothing found", not as a source to copy from.
+#
+# Builds its scratch pair under $REPO/target/debug rather than a fake HOME, the same way
+# `nobins` already copies stub binaries into $REPO itself for the normal cases - $here in
+# install.sh always resolves to the real script directory, never the fake one.
+test_target_debug_ignored() {
+    local name='target-debug-is-never-a-source'
+    local home stubs sysbin path out rc problems
+    home="$(mktemp -d)"
+    mkdir -p "$home/.config" "$home/.local/bin" "$home/.local/share/applications"
+    stubs="$home/stubs"
+    make_stubs "$stubs" 'PulseAudio (on PipeWire 1.6.8)'
+    sysbin="$home/sysbin"
+    make_minimal_path "$sysbin"
+    path="$stubs:$home/.local/bin:$sysbin"
+
+    mkdir -p "$REPO/target/debug"
+    cp "$stubs/mirrik" "$stubs/mirrik-gui" "$REPO/target/debug/"
+    chmod +x "$REPO/target/debug/mirrik" "$REPO/target/debug/mirrik-gui"
+
+    # No fresh release build, no copy at the repo root (both would legitimately be
+    # found and defeat the point) - only the debug pair exists anywhere reachable.
+    # Server is PipeWire by default, so step 2 needs no answer; the first real prompt is
+    # "Build them now?" in step 3, which a plain "n" declines.
+    out="$(printf 'n\n' | env -i \
+        HOME="$home" PATH="$path" \
+        XDG_CONFIG_HOME="$home/.config" XDG_DATA_HOME="$home/.local/share" \
+        STUB_LOG="$home/stub.log" SHELL=/bin/bash TERM=dumb \
+        bash "$INSTALLER" 2>&1)"
+    rc=$?
+    rm -rf "$REPO/target/debug"
+
+    problems=()
+    [ "$rc" = 0 ] && problems+=("exit code 0 - it should have stopped at the declined build")
+    grep -q 'Could not find built binaries' <<<"$out" \
+        || problems+=("did not report 'nothing found', even though only a debug build exists")
+    grep -qF "Found them in: $REPO/target/debug" <<<"$out" \
+        && problems+=("used the debug build as a source - target/debug must never qualify")
+    [ -n "${VERBOSE:-}" ] && [ "${#problems[@]}" -gt 0 ] && printf '%s\n' "$out" | tail -25 | sed 's/^/        | /'
+
+    report_case "$name" "${problems[@]}"
+    rm -rf "$home"
+}
+
 # The actual new path none of the cases above choose: picking "2) show me how to remove
 # it" at the existing-installation menu. Run 1 sets up a Hyprland block, a PATH line and
 # a real binary pair, so run 2's listing has something to show in every category, not
@@ -1053,7 +1101,7 @@ for fn in test_state_switch_compositor test_state_switch_bindir \
           test_state_no_false_positive test_state_skip_carries_forward \
           test_state_source_into_new_target test_state_uninstall_shown \
           test_state_legacy_migrates test_state_newer_file_ignored \
-          test_state_config_hint; do
+          test_state_config_hint test_target_debug_ignored; do
     [ -n "$filter" ] && [[ "$fn" != *"$filter"* ]] && continue
     "$fn"
 done
