@@ -213,6 +213,7 @@ print_state_uninstall() {
         gnome)    dim '    and remove "Mirrik" under Settings > Keyboard > Custom Shortcuts' ;;
         cinnamon) dim '    and remove "Mirrik" under Keyboard > Shortcuts > Custom Shortcuts' ;;
         xfce)     dim '    and remove it under Settings > Keyboard > Application Shortcuts' ;;
+        mate)     dim '    and remove "Mirrik" under Control Center > Keyboard Shortcuts' ;;
     esac
     print_config_hint
     say "    rm -r $state_dir"
@@ -744,6 +745,8 @@ for probe in "${XDG_CURRENT_DESKTOP:-}" "${DESKTOP_SESSION:-}"; do
         *gnome*)    guess=8 ;;
         *kde*|*plasma*) guess=10 ;;
         *xfce*)     guess=11 ;;
+        *mate*)     guess=14 ;;
+        *lxqt*)     guess=15 ;;
     esac
     [ "$guess" != 12 ] && break
 done
@@ -755,8 +758,9 @@ say '     3) i3                 10) KDE Plasma'
 say '     4) niri               11) XFCE'
 say '     5) river              12) Something else'
 say '     6) awesome            13) Skip this step'
-say '     7) bspwm / sxhkd'
-wm="$(choose '  Choice' "$guess" 1 2 3 4 5 6 7 8 9 10 11 12 13)"
+say '     7) bspwm / sxhkd      14) MATE'
+say '                           15) LXQt'
+wm="$(choose '  Choice' "$guess" 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15)"
 
 if [ "$wm" = 13 ]; then
     dim '  Skipped. Whenever you want to bind a key yourself, this is the command to run:'
@@ -1035,6 +1039,63 @@ $MARK_CLOSE"
                 dim '  Not run. Settings > Keyboard > Application Shortcuts > Add does the'
                 dim '  same thing by hand.'
             fi ;;
+        14)
+            say ''
+            dim '  MATE keeps custom shortcuts in dconf too, one slot per shortcut under'
+            dim '  its own schema - simpler than Cinnamon, no separate "list" key to'
+            dim '  update, each slot just needs to exist to take effect.'
+            say ''
+            mate_schema='org.mate.control-center.keybinding'
+            mate_base='/org/mate/desktop/keybindings'
+            mate_slot=''
+            if have gsettings; then
+                # Reuse our own slot if a previous run left one, same idea as Cinnamon.
+                # The path goes after a colon, not into a --path option - gsettings has
+                # no such option, and the usage error it prints instead would be
+                # swallowed here, leaving every run to claim a fresh slot.
+                for entry in $(dconf list "$mate_base/" 2>/dev/null | tr -d '/'); do
+                    if [ "$(gsettings get "$mate_schema:$mate_base/$entry/" name 2>/dev/null)" = "'Mirrik'" ]; then
+                        mate_slot="$entry"
+                        break
+                    fi
+                done
+            fi
+            if [ -z "$mate_slot" ]; then
+                i=0
+                while dconf list "$mate_base/" 2>/dev/null | grep -q "^custom$i/$"; do i=$((i + 1)); done
+                mate_slot="custom$i"
+            fi
+            mate_path="$mate_base/$mate_slot/"
+            say "    gsettings set $mate_schema:$mate_path name 'Mirrik'"
+            say "    gsettings set $mate_schema:$mate_path action '$gui'"
+            say "    gsettings set $mate_schema:$mate_path binding '$gtk$lower'"
+            say ''
+            if have gsettings && confirm '  Do all of that now?'; then
+                state_keybind_kind=mate
+                gsettings set "$mate_schema:$mate_path" name 'Mirrik'
+                gsettings set "$mate_schema:$mate_path" action "$gui"
+                gsettings set "$mate_schema:$mate_path" binding "$gtk$lower"
+                ok "  Done. $human+$upper opens the window."
+                dim '  To undo: Control Center > Keyboard Shortcuts, and remove "Mirrik".'
+            else
+                dim '  Not run. Control Center > Keyboard Shortcuts > Add Custom Shortcut'
+                dim "  does the same thing by hand: name Mirrik, command $gui, shortcut"
+                dim "  $human+$upper."
+            fi ;;
+        15)
+            say ''
+            dim '  LXQt binds global shortcuts through its own daemon (lxqt-globalkeysd),'
+            dim '  not through a config file this script can safely append to - the'
+            dim '  daemon owns its state and can overwrite an outside edit while running.'
+            dim '  So this one is by hand, through its own settings panel:'
+            say ''
+            say '    Preferences > LXQt Settings > Shortcut Keys > Add'
+            say "    Command:   $gui"
+            say "    Shortcut:  $human+$upper"
+            say ''
+            dim '  For the window to float and centre, that depends on which window'
+            dim '  manager LXQt is running (Openbox by default) - match on the window'
+            dim '  class "mirrik" there.' ;;
         *)
             say ''
             dim '  Every desktop has this somewhere under Settings, usually "Keyboard" and'
@@ -1198,6 +1259,7 @@ case "$state_keybind_kind" in
     gnome)    dim '    and remove "Mirrik" under Settings > Keyboard > Custom Shortcuts' ;;
     cinnamon) dim '    and remove "Mirrik" under Keyboard > Shortcuts > Custom Shortcuts' ;;
     xfce)     dim '    and remove it under Settings > Keyboard > Application Shortcuts' ;;
+    mate)     dim '    and remove "Mirrik" under Control Center > Keyboard Shortcuts' ;;
 esac
 print_config_hint
 say "    rm -r $state_dir"
@@ -1245,6 +1307,9 @@ if [ -n "$MIRRIK_STATE_WM" ] && [ "$MIRRIK_STATE_WM" != "$state_wm" ]; then
         xfce)
             note_stale
             dim '    remove it under Settings > Keyboard > Application Shortcuts (if still on XFCE)' ;;
+        mate)
+            note_stale
+            dim '    remove "Mirrik" under Control Center > Keyboard Shortcuts (if still on MATE)' ;;
     esac
 fi
 say ''
