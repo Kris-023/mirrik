@@ -134,8 +134,8 @@ One command runs all of that in order — `fmt`, `clippy -D warnings`, the `carg
 above, then the installer bench — and stops at the first red step:
 
 ```sh
-tools/check.sh          # Linux
-pwsh tools/check.ps1    # Windows
+tools/check.sh                                                # Linux
+powershell -ExecutionPolicy Bypass -File tools/check.ps1      # Windows
 ```
 
 ### Testing the installers
@@ -146,8 +146,13 @@ own test bench that fakes the whole environment rather than touching the real sy
 
 ```sh
 tools/linux/test-install.sh         # Linux installer, 182 cases
-pwsh tools/windows/test-install.ps1 # Windows installer, 41 cases, runs fine on Linux via pwsh
+pwsh tools/windows/test-install.ps1 # Windows installer, 41 cases - runs on Linux, not on Windows
 ```
+
+The second line is not a typo. What a bench tests and where it runs are two different
+things: that one tests `install.ps1`, but its stub binaries are bash scripts that merely
+end in `.exe`, so it needs Linux to run them. On Windows it stops with a message pointing
+at the bench below.
 
 Both fake every external command they call (`pactl`, `gsettings`, `dbus-send`, the registry,
 COM shortcuts, ...) inside an isolated fake `HOME`/`APPDATA`, so neither one touches the real

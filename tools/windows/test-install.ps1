@@ -1,8 +1,21 @@
-<#
+﻿<#
 .SYNOPSIS
-    Test bench for install.ps1 - runs it through its paces without touching your actual system.
+    Test bench for install.ps1 - runs it through its paces without touching your actual
+    system. Runs on LINUX, under pwsh. Not on Windows - see below.
 
 .DESCRIPTION
+    What a bench tests and where it runs are two different things, and the folder name
+    only tells you the first. This one tests install.ps1, but it is built to run on
+    Linux: its stub binaries are `#!/usr/bin/env bash` scripts that merely end in .exe,
+    it calls chmod, and it hands the child process PATH=/usr/bin:/bin. Windows starts
+    none of that. Run it there and it fails for reasons that have nothing to do with the
+    installer.
+
+    On a real Windows machine you want tools/windows/test-install-windows.ps1 instead.
+    The two are not alternatives, they are halves: this one fakes the Windows-only APIs
+    and buys broad coverage cheaply, that one runs the handful of cases where a stub
+    proves nothing. Both numbers count - just say which is which.
+
     Works the same way as tools/linux/test-install.sh: every case gets its own fresh, isolated
     HOME (APPDATA/LOCALAPPDATA point into a mktemp directory) plus a fresh pwsh process
     (tools/windows/test-install-driver.ps1) that dot-sources install.ps1. Thanks to its guard
@@ -34,6 +47,27 @@ $Repo = (Get-Item (Join-Path $PSScriptRoot '../..')).FullName
 $Installer = Join-Path $Repo 'install.ps1'
 $Driver = Join-Path $PSScriptRoot 'test-install-driver.ps1'
 if (-not (Test-Path $Installer)) { Write-Error "install.ps1 not found: $Installer"; exit 1 }
+
+# Say so up front rather than failing later on a bash stub that will not start. The
+# folder says windows, so whoever reaches a Windows machine tries this one first - and
+# without this they get a wall of unrelated errors instead of the one useful sentence.
+# Windows PowerShell 5.1 leaves $PSVersionTable.Platform unset, hence the -or.
+#
+# This file is saved as UTF-8 *with* a BOM, and that is what makes the message above
+# reachable at all: 5.1 reads a BOM-less UTF-8 file as ANSI, and the tick and cross in
+# Write-CaseResult then arrive as bytes that break the parse - the script would die
+# before ever getting here. Write-Host rather than Write-Error, because this is an
+# instruction to a person, not a failure to report.
+if (-not $PSVersionTable.Platform -or $PSVersionTable.Platform -eq 'Win32NT') {
+    Write-Host ''
+    Write-Host '  This bench runs on Linux, under pwsh.' -ForegroundColor Red
+    Write-Host '  Its stub binaries are bash scripts that only end in .exe, so Windows' -ForegroundColor Gray
+    Write-Host '  cannot start them. On Windows you want the other half:' -ForegroundColor Gray
+    Write-Host ''
+    Write-Host '    powershell -ExecutionPolicy Bypass -File tools/windows/test-install-windows.ps1' -ForegroundColor Cyan
+    Write-Host ''
+    exit 1
+}
 
 $script:pass = 0
 $script:fail = 0

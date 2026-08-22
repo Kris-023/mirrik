@@ -38,8 +38,9 @@ $script:pass = 0
 $script:fail = 0
 
 # ASCII markers on purpose. Windows PowerShell 5.1 reads a UTF-8 file without a BOM as
-# ANSI, and a tick or a cross then arrives as control characters that break the parse -
-# which is also why the sibling bench only ever runs under pwsh.
+# ANSI, and a tick or a cross then arrives as bytes that break the parse. The sibling
+# bench ran into exactly that and carries a BOM now; ASCII needs no BOM to survive, so
+# this half stays as it is.
 function Check([string]$name, [scriptblock]$body) {
     $problems = @(& $body | Where-Object { $_ })
     if ($problems.Count -eq 0) {
