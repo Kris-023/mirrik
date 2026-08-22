@@ -117,7 +117,7 @@ project most likely to break silently on a platform nobody just tested by hand. 
 own test bench that fakes the whole environment rather than touching the real system:
 
 ```sh
-tools/linux/test-install.sh         # Linux installer, 169 cases
+tools/linux/test-install.sh         # Linux installer, 170 cases
 pwsh tools/windows/test-install.ps1 # Windows installer, 41 cases, runs fine on Linux via pwsh
 ```
 
@@ -147,12 +147,17 @@ Ctrl+C cannot leave it changed.
 
 Every other test in this project checks bookkeeping — the state file, the holder process,
 the device list, the latency it reports. None of them would notice a mirror that ran
-perfectly and moved no audio at all. One test answers that directly, by watching the
-target's own peak meter while the same sound plays throughout:
+perfectly and moved no audio at all. One test per platform answers that directly, by
+reading the target's own level while the same sound plays throughout:
 
 ```powershell
 cargo build --release -p mirrik-cli
 cargo test -p mirrik-backend-windows --test level -- --ignored --nocapture
+```
+
+```sh
+cargo build --release -p mirrik-cli
+cargo test -p mirrik-backend-linux --test level -- --ignored --nocapture
 ```
 
 It is an A/B, not a measurement: mirror off, the target must read silence; mirror on, it
@@ -161,8 +166,14 @@ through us. `#[ignore]` by default, because it plays a sound out loud and starts
 mirror on real hardware — and it fails rather than skipping when something is missing, so
 it can never pass by doing nothing.
 
-There is no Linux counterpart yet. `module-loopback` has been measured by hand, but nothing
-automatic checks that samples arrive.
+The two differ in what they need from the machine. Windows watches an endpoint's own peak
+meter through `IAudioMeterInformation`, so it wants a second real output device. Linux
+loads a throwaway `module-null-sink` as the target instead, plays a 1 kHz tone with
+`ffmpeg -f pulse` and reads peaks with `parecord`, so any PipeWire machine can run it.
+
+If you touch the Linux one: `parecord` writes nothing at all for its first two seconds, so
+it waits for the samples to land rather than for the clock. Recording "for two seconds" and
+killing it hands back an empty file, and an empty file reads exactly like silence.
 
 ## Code conventions
 
