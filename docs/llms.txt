@@ -1,0 +1,142 @@
+# Mirrik
+
+> Play the same sound on two or more output devices at once, on Windows and Linux,
+> without ever creating a virtual audio device.
+
+Mirrik captures whatever your computer is already playing and sends a copy to as many
+outputs as you pick: speakers and headphones together, two headsets for one film, game
+audio shared with the person next to you, or sound piped into a second room over HDMI.
+There is nothing to configure first — no virtual audio cable, no extra driver. Run it when
+you need it, close it, and the system is exactly as clean as before.
+
+The distinguishing property: **no virtual device is ever created.** Unlike virtual audio
+cables, Voicemeeter or `combine-sink`, there is no fake device to select, remember or
+clean up, your default output is never changed, and other programs notice nothing. Turn
+it off and nothing is left behind.
+
+- Version: 0.1.1
+- Licence: MIT
+- Language: Rust (GUI in egui/eframe)
+- Repository: https://github.com/Kris-023/mirrik
+- Landing page: https://kris-023.github.io/mirrik/
+
+## Platform support
+
+| Platform | Supported | Mechanism |
+|---|---|---|
+| Windows 10 / 11 | yes | WASAPI loopback capture, render client per destination |
+| Linux (PipeWire) | yes | `module-loopback` tapping the monitor of the current sink |
+| Linux (PulseAudio only) | no | Refused deliberately: a crash would strand a loopback permanently |
+| macOS | not yet | No backend written |
+
+PipeWire's PulseAudio compatibility layer is fine; only plain PulseAudio is refused.
+
+## Capabilities
+
+- Mirror to an unlimited number of destinations, added and removed one at a time, while
+  everything else keeps playing.
+- Analogue, USB, HDMI and Bluetooth outputs can be mixed freely. Mismatched sample rates
+  are converted on the fly (a 192 kHz output can feed a 48 kHz headset).
+- Independent volume per destination. Faders apply after the point where the copy is
+  taken, so levels are genuinely separate. If a driver applies gain before that point,
+  the window says so rather than pretending to be in control.
+- Survives change: switching the main output mid-session makes the mirror follow, and an
+  unplugged destination is kept listed. It rejoins by itself while the window is open;
+  with no window open and no command running, the next one picks it back up. Nothing of
+  Mirrik watches for devices on its own.
+- Automatic light / OLED theming, taken from the system's light-dark setting. On Windows
+  the choice is fixed at window open, because Windows only reports it once at launch.
+- Clock drift between devices is corrected continuously; over many hours the only trace
+  is an occasional faint tick.
+- The set that was last on is remembered across a reboot, but never restored on its own:
+  the window offers it and `Space` takes it. Mirroring stays a deliberate action.
+
+## Latency
+
+- Mirrored destination runs ~30 ms behind the original on Windows, ~42 ms on Linux.
+  Measured per destination, not estimated, and displayed in the window.
+- Bluetooth destinations add roughly 200 ms of their own buffering on top, and are
+  labelled as such in the interface.
+
+## Installing
+
+Linux, guided:
+
+    git clone https://github.com/Kris-023/mirrik.git
+    cd mirrik
+    ./install.sh
+
+Requires PipeWire (check with `pactl info | grep 'Server Name'`) and the tools `pactl`,
+`pw-cli`, `pw-dump`, `pw-metadata`. No root. The script detects the compositor (Hyprland,
+Sway, i3, GNOME, KDE and others) to set up a hotkey, and recognises Debian, Ubuntu,
+Fedora including rpm-ostree, Arch, openSUSE, Alpine, Void, Gentoo and NixOS for package
+hints. It has no `--uninstall` flag on purpose: it only ever prints commands for you to
+run yourself.
+
+Windows, guided:
+
+    powershell -ExecutionPolicy Bypass -File install.ps1
+
+No admin rights. Verify the download against the published `SHA256SUMS` first with
+`Get-FileHash -Algorithm SHA256`. The binaries are not code-signed, so SmartScreen will
+warn; choose "More info", then "Run anyway". Uninstall with `-Uninstall`, which shows
+everything it found before removing any of it.
+
+From source:
+
+    cargo build --release
+
+Rust 1.95 or newer, a floor set by egui/eframe rather than Mirrik. The workspace holds
+five crates: `core`, `backend-linux`, `backend-windows`, `cli`, `gui`. The two backend
+crates are separate, so a plain `cargo build` only pulls in the one matching the host OS.
+
+## Keyboard
+
+The window is fully keyboard-driven.
+
+| Key | Action |
+|---|---|
+| `Down` `Up` or `j` `k` | Move focus; faders and devices share one chain |
+| `Right` `Left` or `l` `h` | Nudge the focused fader in 5% steps |
+| `1` … `9` | Switch that device on or off directly |
+| `Enter` | On a device: add it, or remove it if already active |
+| `Space` | Mirror to the set used last time; only offered while nothing is running |
+| `x` | Stop mirroring everywhere |
+| `Esc` or `q` | Close the window; the mirror keeps running |
+
+Closing the window does not stop the mirror. Only `x` does.
+
+`Space` re-applies the last set of destinations. It is offered, never applied on its own:
+the rows say "from last time" and stay off until the key is pressed. A device from that
+set that is currently unplugged is waited for and joins as soon as it appears, for as long
+as the window stays open — nothing of Mirrik watches for devices on its own, so the wait
+ends with it. (The per-destination holder processes below are a different thing: they exist
+only while the mirror is running, and they watch nothing.)
+
+## Command line
+
+    mirrik devices                  # list outputs, * marks the current one
+    mirrik on airpods               # start mirroring to one device
+    mirrik on airpods hdmi          # ... or several at once
+    mirrik add speakers             # add one more while running
+    mirrik remove hdmi              # drop one, keep the rest
+    mirrik toggle airpods           # add if absent, remove if present
+    mirrik status                   # what is running
+    mirrik off                      # stop everything
+    mirrik volume airpods 60        # read or set a device's volume, 0-100
+
+Device names match on any unique substring, and an ambiguous match is reported rather
+than guessed. Every subcommand that reports something accepts `--json`.
+`mirrik status --quiet` exits 0 while mirroring and 1 otherwise, for shell conditions.
+
+## Design guarantees
+
+Each mirrored destination is held open by its own small background process. That is what
+makes "off means gone" a guarantee rather than a promise: if the process dies for any
+reason, the destination disappears with it. Nothing can outlive a crash.
+
+## Source
+
+- README: https://github.com/Kris-023/mirrik#readme
+- Issues: https://github.com/Kris-023/mirrik/issues
+- Licence: https://github.com/Kris-023/mirrik/blob/main/LICENSE

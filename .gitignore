@@ -4,10 +4,6 @@ target/
 # Local working directory - not part of the project
 doku/
 
-# Landing page draft - untrack until it's ready, then remove this line
-# and commit docs/ so GitHub Pages can serve it
-docs/
-
 # Editor / OS noise
 .vscode/
 .idea/

@@ -1,0 +1,1255 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Mirrik: play one sound on two or more outputs at once</title>
+<meta name="description" content="Mirrik mirrors whatever your computer is playing to as many output devices as you like, on Windows and Linux, without creating a virtual device.">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' fill='%23f3f2f2'/%3E%3Crect x='7' y='7' width='18' height='18' fill='%23ec3013'/%3E%3C/svg%3E">
+<meta property="og:type" content="website">
+<meta property="og:title" content="Mirrik: play one sound on two or more outputs at once">
+<meta property="og:description" content="Speakers and headphones together, or two headsets for one film. No virtual device, on Windows or Linux.">
+<meta property="og:url" content="https://kris-023.github.io/mirrik/">
+<meta property="og:image" content="https://kris-023.github.io/mirrik/assets/og-card.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="The Mirrik window mirroring one source to two destinations, beside the line: one sound, every output at once.">
+<meta name="twitter:card" content="summary_large_image">
+<link rel="alternate" type="text/plain" href="llms.txt" title="Markdown for AI agents and crawlers">
+<script>
+  /* Laeuft synchron im head: setzt das gemerkte Theme, bevor irgendetwas gezeichnet wird.
+     Ohne Eintrag bleibt das Attribut weg und prefers-color-scheme entscheidet. */
+  (function(){try{var t=localStorage.getItem('mirrik-theme');
+    if(t==='dark'||t==='light')document.documentElement.setAttribute('data-theme',t);}catch(e){}})();
+</script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root{
+    color-scheme:light;
+    --bg:#f3f2f2; --surface:#e9e7e5; --ink:#201e1d; --accent:#d42b11; --accent-dark:#b02209;
+    --line:#201e1d; --muted:rgba(32,30,29,.72); --muted-2:rgba(32,30,29,.64);
+    --rule:rgba(32,30,29,.14); --rule-strong:rgba(32,30,29,.16);
+    --fcol-link:rgba(32,30,29,.78); --code-bg:#201e1d;
+    --when-light:block; --when-dark:none; --menu-bg:#f8f7f7;
+    /* Auf dem roten CTA-Feld bleiben diese zwei in beiden Themes gleich. */
+    --code-fg:#e8e8e8; --on-accent:#fff; --btn-white-fg:#201e1d; --btn-white-hover:#e6e3e1;
+    /* Schrift auf Akzentflaechen. Hell: Weiss auf #ec3013. Dunkel siehe unten. */
+  }
+  /* Dunkel = der OLED-Skin der App, 1:1 aus gui-oled.png entnommen: echtes Schwarz,
+     Linien #383838 statt Weiss, und der dort bewusst abgesenkte Akzent #d06a4d
+     statt #ec3013 - volle Saettigung blueht auf OLED aus. */
+  @media (prefers-color-scheme:dark){
+    :root:not([data-theme="light"]){
+      color-scheme:dark;
+      --bg:#000; --surface:#0e0d0d; --ink:#e8e8e8; --accent:#d06a4d; --accent-dark:#de8163;
+      --line:#383838; --muted:rgba(232,232,232,.72); --muted-2:rgba(232,232,232,.6);
+      --rule:rgba(232,232,232,.16); --rule-strong:rgba(232,232,232,.2);
+      --fcol-link:rgba(232,232,232,.78); --code-bg:#131211; --on-accent:#0d0c0c;
+      --when-light:none; --when-dark:block; --menu-bg:#171615;
+    }
+  }
+  :root[data-theme="dark"]{
+    color-scheme:dark;
+      --bg:#000; --surface:#0e0d0d; --ink:#e8e8e8; --accent:#d06a4d; --accent-dark:#de8163;
+      --line:#383838; --muted:rgba(232,232,232,.72); --muted-2:rgba(232,232,232,.6);
+      --rule:rgba(232,232,232,.16); --rule-strong:rgba(232,232,232,.2);
+      --fcol-link:rgba(232,232,232,.78); --code-bg:#131211; --on-accent:#0d0c0c;
+      --when-light:none; --when-dark:block; --menu-bg:#171615;
+  }
+  *,*::before,*::after{box-sizing:border-box}
+  body{margin:0;padding:0 16px;background:var(--bg);color:var(--ink);font:400 15.5px/1.6 Archivo,system-ui,sans-serif}
+  a{color:var(--accent);text-decoration:none}
+  a:hover{color:var(--accent-dark)}
+  h1,h2,h3{font-family:Archivo,sans-serif;letter-spacing:-.02em;margin:0}
+  code,.mono{font-family:'JetBrains Mono',monospace}
+  .wrap{max-width:1180px;margin:0 auto;border:2px solid var(--line)}
+  .kicker{font:500 10px/1 Archivo,sans-serif;letter-spacing:.2em;text-transform:uppercase;color:var(--muted-2)}
+  .kicker.accent{color:var(--accent)}
+  .btn{display:inline-block;font:600 13px/1 Archivo,sans-serif;padding:14px 20px;border:2px solid var(--ink);cursor:pointer}
+  .btn-solid{background:var(--accent);color:var(--on-accent);border-color:var(--accent)}
+  .btn-solid:hover{background:var(--accent-dark);border-color:var(--accent-dark);color:var(--on-accent)}
+  .btn-outline{color:var(--ink)}
+  .btn-outline:hover{background:var(--ink);color:var(--bg)}
+  .btn-white{background:#fff;color:var(--btn-white-fg);border-color:#fff}
+  .btn-white:hover{background:var(--btn-white-hover);border-color:var(--btn-white-hover)}
+  .btn-invert{color:var(--on-accent);border-color:var(--on-accent)}
+  .btn-invert:hover{background:var(--on-accent);color:var(--accent-dark)}
+
+  :focus-visible{outline:2px solid var(--accent);outline-offset:3px}
+  nav{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:18px 40px;border-bottom:2px solid var(--line);flex-wrap:wrap}
+  .brand{display:flex;align-items:center;gap:12px;font:700 17px/1 Archivo,sans-serif;letter-spacing:.22em}
+  .brand,.fbrand{margin-right:-.22em}
+  .brand .dot{width:14px;height:14px;background:var(--accent)}
+  .navlinks{display:flex;align-items:center;gap:26px;flex-wrap:wrap}
+  .navlinks a:not(.btn){font:500 12.5px/1 Archivo,sans-serif;color:var(--ink)}
+  .navlinks a:not(.btn):hover{color:var(--accent-dark)}
+  .navlinks .btn{padding:11px 18px}
+  .navtools{display:flex;align-items:center;gap:10px}
+  .iconbtn{display:grid;place-items:center;width:38px;height:38px;padding:0;border:2px solid var(--ink);background:transparent;color:var(--ink);cursor:pointer}
+  .iconbtn:hover{background:var(--ink);color:var(--bg)}
+  .iconbtn svg{width:17px;height:17px;fill:none;stroke:currentColor;stroke-width:1.9;stroke-linecap:round;stroke-linejoin:round}
+  .iconbtn .ico-moon{display:var(--when-light)}
+  .iconbtn .ico-sun{display:var(--when-dark)}
+
+  .lang{position:relative}
+  .langbtn{display:flex;align-items:center;gap:9px;height:38px;padding:0 13px;border:2px solid var(--ink);background:transparent;color:var(--ink);font:600 12px/1 Archivo,sans-serif;letter-spacing:.14em;cursor:pointer}
+  .langbtn:hover{background:var(--ink);color:var(--bg)}
+  .langbtn svg{width:11px;height:11px;fill:none;stroke:currentColor;stroke-width:2.2;stroke-linecap:round;stroke-linejoin:round;transition:transform .15s ease}
+  .lang.open .langbtn svg{transform:rotate(180deg)}
+  .langmenu{position:absolute;top:calc(100% + 9px);right:0;z-index:30;min-width:248px;padding:9px 0;background:var(--menu-bg);border:2px solid var(--line);display:none}
+  .lang.open .langmenu{display:block}
+  .langmenu a{display:block;padding:12px 22px;font:600 13px/1 Archivo,sans-serif;letter-spacing:.16em;text-transform:uppercase;color:var(--ink)}
+  /* Reihenfolge zaehlt: :hover und [aria-current] haben dieselbe Spezifitaet,
+     also muss der Hover-Zustand zuletzt stehen, sonst bleibt die aktive
+     Sprache orange auf orangem Grund. */
+  .langmenu a[aria-current="true"]{color:var(--accent)}
+  .langmenu a:hover,
+  .langmenu a[aria-current="true"]:hover{background:var(--accent-dark);color:var(--on-accent)}
+  .langmenu hr{margin:9px 0;border:0;border-top:2px solid var(--rule)}
+  .langmenu .md .s{display:block;margin-top:6px;font:400 11.5px/1.3 'JetBrains Mono',monospace;letter-spacing:0;text-transform:none;color:var(--muted-2)}
+
+  header.hero{display:grid;grid-template-columns:1.15fr .85fr;border-bottom:2px solid var(--line)}
+  .hero-copy{display:flex;flex-direction:column;justify-content:center;padding:64px 40px;border-right:2px solid var(--line)}
+  .hero-copy h1{font:700 clamp(38px,5vw,60px)/1.02 Archivo,sans-serif;max-width:14ch;text-wrap:balance}
+  .hero-copy p{margin:24px 0 0;max-width:52ch;color:var(--muted)}
+  .hero-ctas{display:flex;flex-wrap:wrap;gap:12px;margin-top:32px}
+  .hero-meta{margin-top:20px;font:400 11.5px/1.6 'JetBrains Mono',monospace;color:var(--muted-2)}
+  .hero-shot{padding:40px;display:flex;align-items:center;justify-content:center;background:var(--surface)}
+
+  /* ── App-Panel ──────────────────────────────────────────────────────────
+     Nachbau des echten Mirrik-Fensters, abgenommen an gui-light.png,
+     gui-oled.png und einem laufenden Fenster. Ersetzt die PNG-Screenshots:
+     scharf auf jedem DPI und folgt dem Theme.
+
+     Die beiden Skins unterscheiden sich nicht nur in der Farbe, sondern in
+     der Schrift: hell ist Archivo ("ink on paper"), OLED ist JetBrains Mono
+     (Terminal). Zahlenwerte, Latenzen und die Fusszeile sind in BEIDEN Skins
+     mono - deshalb --p-font nur dort, wo der Skin wirklich wechselt. */
+  .panel{
+    --p-bg:#f3f2f2; --p-ink:#201e1d; --p-rule:#201e1d; --p-accent:#d42b11; --p-on-accent:#fff;
+    --p-font:Archivo,sans-serif; --p-brand:var(--p-ink);
+    --p-title:700 25px/1.05 Archivo,sans-serif; --p-name-fs:13.5px; --p-name-w:600;
+    width:100%;max-width:430px;background:var(--p-bg);color:var(--p-ink);
+    border:2px solid var(--p-rule);font-family:var(--p-font);user-select:none}
+  :root[data-theme="dark"] .panel{
+    --p-bg:#000; --p-ink:#e8e8e8; --p-rule:#2a2a2a; --p-accent:#d06a4d; --p-on-accent:#0d0c0c;
+    --p-font:'JetBrains Mono',monospace; --p-brand:var(--p-accent);
+    --p-title:700 21px/1.15 'JetBrains Mono',monospace; --p-name-fs:12.5px; --p-name-w:500}
+  @media (prefers-color-scheme:dark){
+    :root:not([data-theme="light"]) .panel{
+      --p-bg:#000; --p-ink:#e8e8e8; --p-rule:#2a2a2a; --p-accent:#d06a4d; --p-on-accent:#0d0c0c;
+      --p-font:'JetBrains Mono',monospace; --p-brand:var(--p-accent);
+      --p-title:700 21px/1.15 'JetBrains Mono',monospace; --p-name-fs:12.5px; --p-name-w:500}
+  }
+  .p-rule{height:2px;background:var(--p-rule)}
+  .p-label{font:500 9.5px/1 var(--p-font);letter-spacing:.16em;text-transform:uppercase;color:color-mix(in srgb,var(--p-ink) 50%,transparent)}
+  .p-mono{font-family:'JetBrains Mono',monospace}
+
+  .p-head{padding:18px 20px 14px}
+  .p-head-top{display:flex;align-items:flex-start;justify-content:space-between;gap:16px}
+  .p-head-l{display:flex;gap:12px;align-items:flex-start;min-width:0}
+  .p-dot{width:12px;height:12px;margin-top:6px;flex:none;background:var(--p-accent)}
+  .p-title{font:var(--p-title);letter-spacing:-.02em;white-space:nowrap}
+  .p-brand{font:500 11px/1 'JetBrains Mono',monospace;letter-spacing:.22em;margin-right:-.22em;padding-top:5px;flex:none;color:var(--p-brand)}
+  .p-sub{margin:6px 0 0 24px;font:400 9.5px/1.3 var(--p-font);letter-spacing:.14em;text-transform:uppercase;
+    color:color-mix(in srgb,var(--p-ink) 50%,transparent);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+
+  .p-sec{padding:14px 20px 16px}
+  .p-src{margin-top:7px;font:var(--p-name-w) 14px/1.3 var(--p-font);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .p-src-sub{margin-top:2px;font:400 11px/1.3 var(--p-font);color:color-mix(in srgb,var(--p-ink) 55%,transparent)}
+
+  .p-mixer{padding:14px 20px 6px}
+  .p-mixer .p-label{margin-bottom:12px}
+  .p-fader{display:grid;grid-template-columns:1fr 62px;gap:8px 14px;align-items:center;padding-bottom:14px}
+  /* Der Akzentrahmen im Fenster markiert den FOKUS, nicht die Quelle - in
+     screenshots/gui-idle.png stand er nur deshalb um den Master, weil der dort gerade
+     fokussiert war. Der Rahmen wird von .p-focus gezeichnet und gleitet mit; hier steht
+     nur der Platz dafuer, damit beim Fokuswechsel nichts springt. */
+  .p-fader{border:2px solid transparent;padding:9px 10px 8px;margin:0 -12px 6px}
+  .p-fname{display:flex;align-items:baseline;gap:8px;flex-wrap:nowrap;min-width:0}
+  .p-fname .n{font:var(--p-name-w) var(--p-name-fs)/1.2 var(--p-font);flex:none}
+  .p-fname .s{font:400 10px/1.2 var(--p-font);position:relative;top:-1px;color:color-mix(in srgb,var(--p-ink) 50%,transparent);
+    min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .p-fader.is-focus .p-fname .n,.p-fader.is-focus .p-fname .s{color:var(--p-accent)}
+  .p-fname .s.warn{color:var(--p-accent)}
+  .p-vol{font:500 12.5px/1 'JetBrains Mono',monospace;text-align:right;padding:5px 7px;
+    border:1px solid color-mix(in srgb,var(--p-ink) 22%,transparent)}
+  .p-track{grid-column:1 / -1;position:relative;height:16px}
+  .p-track i{position:absolute;top:7px;left:0;right:0;height:2px;background:color-mix(in srgb,var(--p-ink) 22%,transparent)}
+  .p-track b{position:absolute;top:7px;left:0;height:2px;width:var(--pct);background:var(--p-ink)}
+  .p-fader.is-focus .p-track b{background:var(--p-accent)}
+  .p-track u{position:absolute;top:1px;left:var(--pct);width:10px;height:14px;margin-left:-5px;background:var(--p-bg);border:2px solid var(--p-ink)}
+  .p-fader.is-focus .p-track u{border-color:var(--p-accent)}
+
+  .p-dest{padding:14px 20px 16px}
+  .p-dest-head{display:flex;justify-content:space-between;align-items:baseline;gap:12px;margin-bottom:10px}
+  .p-count{font:400 10px/1 'JetBrains Mono',monospace;color:color-mix(in srgb,var(--p-ink) 45%,transparent);white-space:nowrap}
+  /* Aktives Ziel: voller Akzentrahmen. Die alten Screenshots hatten hier noch
+     eine Schiene links - das Fenster zeichnet inzwischen einen Kasten. */
+  .p-dev{display:grid;grid-template-columns:20px 1fr auto;gap:12px;align-items:center;padding:9px 10px;
+    border:2px solid transparent;margin-bottom:8px}
+  .p-dev:last-child{margin-bottom:0}
+  /* Aktiv, aber nicht fokussiert: nur der Balken an der linken Kante. Ist die Zeile
+     fokussiert, uebernimmt der Rahmen die Markierung und der Balken entfaellt - genau so
+     zeigt es das Fenster (drei Screenshots: an/unmarkiert, an/markiert, aus/markiert). */
+  .p-dev.is-on::before{content:"";position:absolute;left:0;top:0;bottom:0;width:3px;
+    background:var(--p-accent)}
+  .p-dev.is-on.is-focus::before{display:none}
+  .p-dev .num{font:500 11.5px/1 'JetBrains Mono',monospace;color:color-mix(in srgb,var(--p-ink) 40%,transparent)}
+  .p-dev.is-on .num{color:var(--p-accent)}
+  .p-dev .dtxt{min-width:0}
+  .p-dev .dn{font:var(--p-name-w) var(--p-name-fs)/1.25 var(--p-font);color:color-mix(in srgb,var(--p-ink) 62%,transparent);
+    white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .p-dev.is-on .dn{color:var(--p-ink)}
+  .p-dev .dm{margin-top:2px;font:400 10px/1.3 'JetBrains Mono',monospace;color:color-mix(in srgb,var(--p-ink) 45%,transparent)}
+  .p-tag{font:500 9.5px/1 'JetBrains Mono',monospace;letter-spacing:.1em;padding:5px 8px;
+    border:1px solid color-mix(in srgb,var(--p-ink) 20%,transparent);color:color-mix(in srgb,var(--p-ink) 45%,transparent)}
+  .p-dev.is-on .p-tag{background:var(--p-accent);border-color:var(--p-accent);color:var(--p-on-accent)}
+  .p-hint{padding:11px 20px 12px;font:400 10px/1.55 'JetBrains Mono',monospace;color:color-mix(in srgb,var(--p-ink) 50%,transparent)}
+
+  .stats{display:grid;grid-template-columns:repeat(4,1fr);margin:0 -2px -2px 0;overflow:hidden}
+  .stats>div{padding:26px 24px;border-right:2px solid var(--line);border-bottom:2px solid var(--line)}
+  .stat-val{font:700 26px/1 Archivo,sans-serif;letter-spacing:-.02em}
+  .stat-label{margin-top:8px;font:400 11.5px/1.4 Archivo,sans-serif;color:var(--muted)}
+
+  section{border-bottom:2px solid var(--line)}
+  .section-head{padding:44px 40px 8px}
+  .section-head h2{font:700 34px/1.08 Archivo,sans-serif;max-width:20ch;text-wrap:balance}
+
+  .features{display:grid;grid-template-columns:repeat(3,1fr);margin:36px -2px -2px 0;border-top:2px solid var(--line);overflow:hidden}
+  .feature{padding:26px 24px 30px;border-right:2px solid var(--line);border-bottom:2px solid var(--line)}
+  .feature .num{font:500 11px/1 'JetBrains Mono',monospace;color:var(--accent)}
+  .feature h3{margin-top:14px;font:600 16px/1.25 Archivo,sans-serif}
+  .feature p{margin:9px 0 0;font-size:13px;color:var(--muted)}
+
+  .how{display:grid;grid-template-columns:.9fr 1.1fr}
+  .how-intro{display:flex;flex-direction:column;justify-content:center;padding:48px 40px;border-right:2px solid var(--line)}
+  .how-intro p{margin-top:18px;font-size:13.5px;color:var(--muted)}
+  .step{display:grid;grid-template-columns:56px 1fr;align-items:center;gap:18px;padding:24px 34px;border-bottom:2px solid var(--line)}
+  .step:last-child{border-bottom:0}
+  .step .n{font:700 30px/1 Archivo,sans-serif;color:var(--accent)}
+  .step h3{font:600 15px/1.25 Archivo,sans-serif}
+  .step p{margin:7px 0 0;font-size:12.5px;color:var(--muted)}
+
+  .install-head{display:flex;flex-wrap:wrap;align-items:flex-end;justify-content:space-between;gap:16px;padding:44px 40px 24px}
+  .tabs{display:flex;border:2px solid var(--line)}
+  /* background-clip: der Hintergrund des aktiven Reiters endet an der Padding-Box und
+     laeuft nicht unter seinen eigenen Trennstrich - sonst steht Akzentfarbe im Strich. */
+  .tab{font:600 12.5px/1 Archivo,sans-serif;padding:12px 18px;border:0;border-right:2px solid var(--line);background:transparent;background-clip:padding-box;color:var(--ink);cursor:pointer}
+  /* :last-of-type, nicht :last-child: das letzte Kind der Leiste ist die eingefuegte
+     Unterlage, nicht der letzte Reiter - dadurch behielt er seinen Trennstrich und der
+     rechte Rand der Leiste war doppelt so dick wie der linke. */
+  .tab:last-of-type{border-right:0}
+  /* Die Kurzform `background` setzt background-clip wieder auf border-box zurueck -
+     deshalb steht es hier noch einmal, hinter der Kurzform. */
+  .tab.active{background:var(--accent);background-clip:padding-box;color:var(--on-accent)}
+  .install-body{display:grid;grid-template-columns:1fr 1fr;border-top:2px solid var(--line)}
+  /* Without min-width:0 a grid item refuses to go below its min-content width, which
+     here is the widest line inside a <pre>. The overflow-x on .istep pre then never gets
+     a chance to do its job and the whole page grows instead. */
+  .install-steps{border-right:2px solid var(--line);min-width:0;
+    transition:height .38s cubic-bezier(.2,.9,.2,1)}
+  .platform-steps{animation:tabin .34s cubic-bezier(.2,.9,.2,1) both}
+  @keyframes tabin{from{opacity:0;transform:translate3d(0,8px,0)}to{opacity:1;transform:none}}
+  /* Der aktive Reiter bekommt eine Unterlage, die zwischen den Reitern gleitet. */
+  .tabs{position:relative}
+  /* EINE Flaeche, nicht zwei: die Unterlage ist der Hintergrund des aktiven Reiters und
+     gleitet zwischen ihnen. Vorher lag sie zusaetzlich hinter einem ohnehin orangen
+     Reiter - zwei deckungsgleiche Flaechen, deren Kanten sich bei ganzzahliger
+     Skalierung um einen Bruchteil verfehlten und als Streifen sichtbar wurden. */
+  .tab-ink{position:absolute;left:0;top:0;height:100%;pointer-events:none;z-index:0;
+    background:var(--accent);opacity:0;
+    transition:transform .42s cubic-bezier(.2,.9,.2,1),width .42s cubic-bezier(.2,.9,.2,1),
+               opacity .25s ease}
+  /* Ohne Skript bleibt der Reiter selbst orange - die Klasse setzt das Skript. */
+  .tabs.has-ink .tab.active{background:transparent}
+  /* Die Schriftfarbe wartet, bis die Flaeche da ist. Ohne die Verzoegerung steht der
+     helle Text des Zielreiters waehrend der Fahrt auf hellem Grund - im hellen Theme
+     eine knappe halbe Sekunde lang unlesbar. Der abgewaehlte Reiter faerbt sofort
+     zurueck, denn unter ihm verschwindet die Flaeche ja sofort. */
+  .tabs.has-ink .tab{transition:color .16s ease}
+  .tabs.has-ink .tab.active{transition:color .16s ease .3s}
+  .tab{position:relative;z-index:1}
+  #reqs-title,#reqs-note,#reqs-list{transition:opacity .22s ease}
+  .reqs.is-swap #reqs-title,.reqs.is-swap #reqs-note,.reqs.is-swap #reqs-list{opacity:0}
+  .istep{padding:20px 34px;border-bottom:1px solid var(--rule)}
+  .istep:last-child{border-bottom:0}
+  .istep-head{display:flex;align-items:baseline;gap:10px}
+  .istep-head .n{font:500 11px/1 'JetBrains Mono',monospace;color:var(--accent)}
+  .istep-head .t{font:600 13.5px/1.3 Archivo,sans-serif}
+  .istep pre{margin:11px 0 0 22px;padding:11px 13px;background:var(--code-bg);color:var(--code-fg);font:400 11.5px/1.6 'JetBrains Mono',monospace;white-space:pre;overflow-x:auto}
+  .istep .note{margin:8px 0 0 22px;font-size:11.5px;color:var(--muted-2)}
+  /* Oben andocken statt mittig schweben: in einer hohen Spalte stand der Block sonst
+     mit viel Luft ueber und unter sich und wirkte verloren. Auf Augenhoehe mit Schritt 01
+     hat er einen Bezug. Bei viel Platz laeuft er mit, statt aus dem Blick zu geraten. */
+  .reqs{display:flex;flex-direction:column;justify-content:flex-start;padding:28px 34px;background:var(--surface)}
+  .req-row{display:grid;grid-template-columns:120px 1fr;align-items:center;gap:14px;padding:12px 0;border-bottom:1px solid var(--rule-strong)}
+  .req-row:last-of-type{border-bottom:0}
+  .req-k{font:500 11.5px/1.4 Archivo,sans-serif;color:var(--muted-2)}
+  .req-v{font:400 11.5px/1.4 'JetBrains Mono',monospace}
+  .reqs p{margin:18px 0 0;font-size:12px;color:var(--muted)}
+
+  .faq-item{border-bottom:2px solid var(--rule)}
+  .faq-item:last-child{border-bottom:0}
+  .faq-q:hover{color:var(--accent-dark)}
+  .faq-q{display:flex;align-items:center;justify-content:space-between;gap:18px;width:100%;text-align:left;padding:20px 40px;border:0;background:transparent;cursor:pointer;font:600 14.5px/1.3 Archivo,sans-serif;color:var(--ink)}
+  .faq-sign{font:400 20px/1 'JetBrains Mono',monospace;color:var(--accent)}
+  .faq-a{margin:0;padding:0 40px;max-width:76ch;font-size:13px;color:var(--muted)}
+  /* Der Wrapper kommt aus dem Skript und traegt die Hoehe. Sie wird beim Oeffnen einmal
+     gemessen und danach auf auto gesetzt: keine geratene max-height, und danach darf der
+     Text umbrechen, wie er will. Der elegantere Weg waere grid-template-rows 0fr -> 1fr;
+     die Hoehe hier ist unabhaengig davon, ob der Browser das interpolieren kann. */
+  .faq-wrap{height:0;overflow:hidden;opacity:0;
+    transition:height .4s cubic-bezier(.2,.9,.2,1),opacity .3s ease}
+  .faq-item.open .faq-wrap{opacity:1}
+  .faq-wrap .faq-a{padding-bottom:24px}
+  /* Das Zeichen wechselt ohnehin von + auf -, es bekommt nur einen kurzen Anschub.
+     Als Klasse aus dem Skript, nicht als Zustandsregel: so haengt der Effekt am
+     Tastendruck und nicht daran, welche Regel gerade gewinnt. */
+  .faq-sign{display:inline-block}
+  .faq-sign.is-flip{animation:signflip .34s cubic-bezier(.2,.9,.2,1)}
+  @keyframes signflip{
+    0%{transform:rotate(-90deg) scale(.7);opacity:.3}
+    100%{transform:none;opacity:1}
+  }
+  .faq-q{transition:background .25s ease}
+  .faq-q:hover{background:color-mix(in srgb,var(--ink) 3%,transparent)}
+
+  .cta{background:var(--accent);color:var(--on-accent)}
+  .cta-inner{padding:56px 40px}
+  .cta h2{font:700 clamp(32px,4.4vw,50px)/1.04 Archivo,sans-serif;max-width:17ch;text-wrap:balance}
+  .cta .row{display:flex;flex-wrap:wrap;gap:12px;margin-top:28px}
+
+  footer{display:grid;grid-template-columns:1.4fr 1fr 1fr 1fr;margin:0 -2px -2px 0;overflow:hidden}
+  footer > div{padding:32px 26px;border-right:2px solid var(--line);border-bottom:2px solid var(--line)}
+  footer > div:first-child{padding-left:40px}
+  .fbrand{display:flex;align-items:center;gap:12px;font:700 14px/1 Archivo,sans-serif;letter-spacing:.22em}
+  .fbrand .dot{width:11px;height:11px;background:var(--accent)}
+  footer p{margin:14px 0 0;max-width:34ch;font-size:11.5px;color:var(--muted)}
+  .fcol-title{font:500 10px/1 Archivo,sans-serif;letter-spacing:.2em;text-transform:uppercase;color:var(--muted-2);margin-bottom:14px}
+  .fcol a{display:block;padding:4px 0;font-size:12px;color:var(--fcol-link)}
+  .fcol a:hover{color:var(--accent-dark)}
+  .bottom{padding:16px 40px;font:400 11px/1.5 'JetBrains Mono',monospace;color:var(--muted-2)}
+
+  .section-head.tight{padding-bottom:24px}
+  @media (max-width:820px){
+    footer > div:nth-child(odd){padding-left:40px}
+    header.hero,.how,.install-body{grid-template-columns:1fr}
+    .hero-copy,.how-intro{border-right:0;border-bottom:2px solid var(--line)}
+    .install-steps{border-right:0;border-bottom:2px solid var(--line)}
+    .features{grid-template-columns:1fr 1fr}
+    .stats{grid-template-columns:1fr 1fr}
+    footer{grid-template-columns:1fr 1fr}
+  }
+  @media (max-width:560px){
+    nav,.hero-copy,.how-intro,.section-head,.install-head,.cta-inner,.faq-q,.faq-a,.bottom{padding-left:24px;padding-right:24px}
+    .step,.istep,.reqs{padding-left:24px;padding-right:24px}
+    footer > div,footer > div:first-child,footer > div:nth-child(odd){padding-left:24px;padding-right:24px}
+    .hero-shot{padding:24px;min-width:0}
+    footer{grid-template-columns:1fr}
+    .features,.stats{grid-template-columns:1fr}
+    /* The panel is a picture of the window, not the window: on a phone it may wrap its
+       headline rather than push the page sideways. nowrap is what kept the page from
+       going below ~470px, and ellipsis would not have helped - that keeps nowrap. */
+    .panel{min-width:0}
+    .p-title{white-space:normal}
+    .p-sub{white-space:normal;overflow:visible;text-overflow:clip}
+  }
+  /* ---------------------------------------------------------------- Demo im Panel
+     Das Panel fuehrt sich selbst vor. Bewegt wird ausschliesslich Glas: eine
+     Fokusflaeche, ein Lichtwisch und eine Tastenkappe. Die Geometrie der Seite bleibt
+     hart - keine Rundungen, keine Schatten an Kanten, nichts federt in der Groesse.
+     Alles laeuft ueber transform/opacity, damit kein Layout neu gerechnet wird. */
+  .panel{position:relative}
+  .p-focus{position:absolute;left:12px;right:12px;width:auto;height:0;top:0;pointer-events:none;opacity:0;
+    z-index:2;transform:translate3d(0,0,0);
+    box-shadow:inset 0 0 0 2px var(--p-accent),
+               inset 0 1px 0 color-mix(in srgb,#fff 22%,transparent),
+               0 0 18px color-mix(in srgb,var(--p-accent) 22%,transparent);
+    transition:transform .5s cubic-bezier(.2,.9,.2,1),height .34s cubic-bezier(.2,.9,.2,1),
+               opacity .28s ease}
+  /* Ueber der Zeile liegt bewusst KEIN blur - der Text darunter muss lesbar bleiben.
+     Glas heisst hier: etwas mehr Saettigung und Licht, mehr nicht. */
+  @supports (backdrop-filter:saturate(2)){
+    .p-focus{backdrop-filter:saturate(165%) brightness(1.05)}
+  }
+  .p-focus.is-live{opacity:1}
+  /* Das Panel behaelt die Hoehe seines vollsten Zustands (per Skript gemessen), sonst
+     wackelt die halbe Seite, sobald ein Ziel-Fader verschwindet. Der frei werdende Platz
+     faellt an die Zielliste - genauso sieht das echte Fenster im Ruhezustand aus. */
+  .panel{display:flex;flex-direction:column}
+  .p-dest{flex:1}
+  .panel[data-live] .p-dev,.panel[data-live] .p-fader{cursor:pointer}
+  /* Zutat der Website, nicht des Fensters: eine Zeile unter dem Zeiger hebt sich leicht ab.
+     Bewusst nur Licht, keine Akzentfarbe - die ist im Fenster fuer Zustaende reserviert. */
+  .panel[data-live] .p-dev:hover{background:color-mix(in srgb,var(--p-ink) 6%,transparent)}
+  .panel:focus-visible{outline:2px solid var(--p-accent);outline-offset:3px}
+  /* Zeile unter dem Panel: sagt, dass es ein Nachbau ist - und dass man ihn anfassen darf. */
+  /* Zwei Zeilen reserviert: der Text wechselt, sobald jemand das Panel uebernimmt,
+     und ohne Reservierung ruckt der ganze Kopf um eine Zeilenhoehe. */
+  .demo-note{margin-top:14px;min-height:3.4em;text-align:center;
+    font:400 10.5px/1.6 'JetBrains Mono',monospace;
+    letter-spacing:.06em;color:var(--muted);opacity:.85}
+  .demo-note kbd{font:inherit;padding:2px 5px;margin:0 1px;
+    border:1px solid color-mix(in srgb,var(--ink) 22%,transparent);
+    background:color-mix(in srgb,var(--ink) 5%,transparent)}
+  .hero-shot{flex-direction:column}
+  /* Der fluessige Teil: beim Sprung wird die Flaeche kurz gestaucht und faengt sich. */
+  .p-focus.is-jump{transform:scaleY(1.055);transition:transform .17s ease-out}
+
+  /* Lichtwisch, wenn eine Zeile zugeschaltet wird - einmal quer, dann weg. */
+  .p-dev{position:relative;overflow:hidden}
+  .p-dev::after{content:"";position:absolute;inset:0;pointer-events:none;opacity:0;
+    background:linear-gradient(105deg,transparent 38%,
+      color-mix(in srgb,#fff 55%,transparent) 50%,transparent 62%);
+    transform:translate3d(-130%,0,0)}
+  .p-dev.is-sweep::after{animation:sweep .62s cubic-bezier(.3,.7,.3,1) forwards}
+  @keyframes sweep{
+    0%{opacity:0;transform:translate3d(-130%,0,0)}
+    18%{opacity:.9}
+    100%{opacity:0;transform:translate3d(130%,0,0)}
+  }
+
+  /* Tastenkappe: zeigt, welche Taste den Schritt ausgeloest hat. */
+  .p-key{position:absolute;right:14px;bottom:52px;z-index:3;pointer-events:none;
+    padding:7px 11px;font:500 11px/1 'JetBrains Mono',monospace;letter-spacing:.08em;
+    color:var(--p-ink);border:1px solid color-mix(in srgb,var(--p-ink) 26%,transparent);
+    background:color-mix(in srgb,var(--p-bg) 72%,transparent);
+    box-shadow:inset 0 1px 0 color-mix(in srgb,#fff 55%,transparent);
+    opacity:0;transform:translate3d(0,8px,0) scale(.94)}
+  @supports (backdrop-filter:blur(1px)){
+    .p-key{backdrop-filter:blur(10px) saturate(170%);
+      background:color-mix(in srgb,var(--p-bg) 46%,transparent)}
+  }
+  .p-key.is-hit{animation:keyhit 1.05s cubic-bezier(.2,.9,.2,1) forwards}
+  @keyframes keyhit{
+    0%{opacity:0;transform:translate3d(0,8px,0) scale(.94)}
+    14%{opacity:1;transform:translate3d(0,0,0) scale(1)}
+    72%{opacity:1;transform:translate3d(0,0,0) scale(1)}
+    100%{opacity:0;transform:translate3d(0,-5px,0) scale(.99)}
+  }
+
+  /* Werte, die sich aendern, wechseln weich statt zu springen. */
+  .p-vol,.p-count,.p-tag,.p-dev .dm,.p-title,.p-sub,.p-hint span{transition:opacity .2s ease}
+  .p-track b,.p-track u{transition:width .42s cubic-bezier(.2,.9,.2,1),left .42s cubic-bezier(.2,.9,.2,1)}
+  .p-fader[data-fader]{transition:opacity .3s ease}
+  .p-fader[data-fader].is-hidden{display:none}
+  .p-dot{transition:background .3s ease,box-shadow .3s ease}
+  .p-dot.is-off{background:transparent;box-shadow:inset 0 0 0 2px color-mix(in srgb,var(--p-ink) 55%,transparent)}
+
+  /* Abschnitte ziehen beim Reinscrollen auf - nur wo der Browser es nativ kann,
+     und nur als Zugabe: ohne Unterstuetzung steht alles sofort da. */
+  @supports (animation-timeline:view()){
+    @media (prefers-reduced-motion:no-preference){
+      .feature,.step,.istep,.faq-item,.stats > div{
+        animation:rise linear both;animation-timeline:view();
+        animation-range:entry 5% cover 22%}
+      @keyframes rise{from{opacity:0;transform:translate3d(0,14px,0)}to{opacity:1;transform:none}}
+    }
+  }
+
+  /* Wer weniger Bewegung will, bekommt das Panel als Standbild. */
+  @media (prefers-reduced-motion:reduce){
+    .p-focus,.p-key{display:none}
+    .p-dev.is-sweep::after{animation:none}
+    .p-vol,.p-count,.p-tag,.p-dev .dm,.p-title,.p-sub,.p-hint span,
+    .p-track b,.p-track u,.p-fader[data-fader],.p-dot{transition:none}
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <nav>
+    <div class="brand"><span class="dot"></span>MIRRIK</div>
+    <div class="navlinks">
+      <a href="#features">Features</a>
+      <a href="#how">How it works</a>
+      <a href="#install">Install</a>
+      <a href="#faq">FAQ</a>
+      <div class="navtools">
+        <button type="button" class="iconbtn" id="theme-toggle" aria-pressed="false" aria-label="Switch to dark theme" title="Switch to dark theme">
+          <svg class="ico-moon" viewBox="0 0 24 24" aria-hidden="true"><path d="M20 14.5A8.5 8.5 0 0 1 9.5 4a8.5 8.5 0 1 0 10.5 10.5Z"/></svg>
+          <svg class="ico-sun" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4.2"/><path d="M12 2.4v2.3M12 19.3v2.3M4.2 4.2l1.6 1.6M18.2 18.2l1.6 1.6M2.4 12h2.3M19.3 12h2.3M4.2 19.8l1.6-1.6M18.2 5.8l1.6-1.6"/></svg>
+        </button>
+        <div class="lang" id="lang">
+          <button type="button" class="langbtn" id="lang-btn" aria-expanded="false" aria-haspopup="true" aria-controls="lang-menu">EN
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>
+          </button>
+          <div class="langmenu" id="lang-menu" role="menu" aria-labelledby="lang-btn">
+            <a href="./" role="menuitem" aria-current="true" hreflang="en">English</a>
+            <hr role="separator">
+            <a class="md" href="llms.txt" role="menuitem">Markdown<span class="s">For AI agents &amp; crawlers</span></a>
+          </div>
+        </div>
+      </div>
+      <a class="btn btn-solid" href="#download">Download</a>
+    </div>
+  </nav>
+
+  <header class="hero">
+    <div class="hero-copy">
+      <div class="kicker accent">Open source · Windows &amp; Linux · MIT</div>
+      <h1>One sound. Every output at once.</h1>
+      <p>Watch a film with a friend on two pairs of headphones. Keep your speakers and your
+      headset running at the same time. Mirrik copies whatever is already playing to as many
+      outputs as you like, and when you switch it off, nothing is left behind.</p>
+      <div class="hero-ctas">
+        <a class="btn btn-solid" href="https://github.com/Kris-023/mirrik/releases/download/v0.1.1/mirrik-0.1.1-windows-x86_64.zip">Download for Windows</a>
+        <a class="btn btn-outline" href="https://github.com/Kris-023/mirrik/releases/download/v0.1.1/mirrik-0.1.1-linux-x86_64.tar.gz">Download for Linux</a>
+      </div>
+      <div class="hero-meta">v0.1.1 · MIT · built in Rust</div>
+    </div>
+    <div class="hero-shot">
+      <div class="panel" id="demo" tabindex="0" role="group"
+           aria-label="Interactive mock-up of the Mirrik window: click a destination or press 1, 2, Space or x">
+        <div class="p-focus" id="d-focus" aria-hidden="true"></div>
+        <div class="p-key" id="d-key" aria-hidden="true"></div>
+        <div class="p-head">
+          <div class="p-head-top">
+            <div class="p-head-l">
+              <span class="p-dot" id="d-dot"></span>
+              <div class="p-title" id="d-title">Mirroring to 2 devices</div>
+            </div>
+            <div class="p-brand">MIRRIK</div>
+          </div>
+          <div class="p-sub" id="d-sub">AirPods Max USB &nbsp;&middot;&nbsp; WH-1000XM3</div>
+        </div>
+
+        <div class="p-rule"></div>
+        <div class="p-sec">
+          <div class="p-label">Source</div>
+          <div class="p-src">Ryzen HD Audio Controller Analog Stereo</div>
+          <div class="p-src-sub">analog</div>
+        </div>
+
+        <div class="p-rule"></div>
+        <div class="p-sec p-mixer">
+          <div class="p-label">Mixer</div>
+          <div class="p-fader is-master" data-src>
+            <div class="p-fname"><span class="n">Ryzen HD Audio</span><span class="s" id="d-master-note">&mdash; this device only</span></div>
+            <div class="p-vol">62 %</div>
+            <div class="p-track" style="--pct:62%"><i></i><b></b><u></u></div>
+          </div>
+          <div class="p-fader" data-fader="0">
+            <div class="p-fname"><span class="n">AirPods Max USB</span><span class="s">&mdash; this device only</span></div>
+            <div class="p-vol">85 %</div>
+            <div class="p-track" style="--pct:85%"><i></i><b></b><u></u></div>
+          </div>
+          <div class="p-fader" data-fader="1">
+            <div class="p-fname"><span class="n">WH-1000XM3</span><span class="s">&mdash; this device only</span></div>
+            <div class="p-vol">56 %</div>
+            <div class="p-track" style="--pct:56%"><i></i><b></b><u></u></div>
+          </div>
+        </div>
+
+        <div class="p-rule"></div>
+        <div class="p-sec p-dest">
+          <div class="p-dest-head">
+            <div class="p-label">Destinations</div>
+            <div class="p-count" id="d-count">2 / 2 active</div>
+          </div>
+          <div class="p-dev is-on" data-dev="0">
+            <div class="num">1</div>
+            <div class="dtxt"><div class="dn">AirPods Max USB Audio Analog Stereo</div><div class="dm">~42 ms &middot; 85 %</div></div>
+            <div class="p-tag">ON</div>
+          </div>
+          <div class="p-dev is-on" data-dev="1">
+            <div class="num">2</div>
+            <div class="dtxt"><div class="dn">WH-1000XM3</div><div class="dm">~242 ms &middot; 56 % &middot; Bluetooth</div></div>
+            <div class="p-tag">ON</div>
+          </div>
+        </div>
+
+        <div class="p-rule"></div>
+        <div class="p-hint"><span id="d-hint-move">up/down focus &middot; Enter add or remove &middot; 1-9 direct</span><br><span id="d-hint-leave">x stop mirroring &middot; Esc close, mirror keeps running</span></div>
+      </div>
+      <div class="demo-note" id="demo-note">A working mock-up, not a screenshot. Click a row or a fader,
+        or press <kbd>1</kbd> <kbd>2</kbd> <kbd>Space</kbd> <kbd>x</kbd></div>
+    </div>
+  </header>
+
+  <section class="stats">
+    <div><div class="stat-val">30 / 42 ms</div><div class="stat-label">typical delay, Windows / Linux</div></div>
+    <div><div class="stat-val">0</div><div class="stat-label">devices or settings left behind</div></div>
+    <div><div class="stat-val">&infin;</div><div class="stat-label">outputs at once, not just two</div></div>
+    <div><div class="stat-val">MIT</div><div class="stat-label">licence, source included</div></div>
+  </section>
+
+  <section id="features">
+    <div class="section-head">
+      <div class="kicker">Features</div>
+      <h2>Everything a virtual cable does, none of the cleanup.</h2>
+    </div>
+    <div class="features">
+      <div class="feature"><div class="num">01</div><h3>Mirror to as many devices as you like</h3><p>Add and remove destinations one at a time. Analogue, USB, HDMI and Bluetooth all work together, and everything else keeps playing while you do it.</p></div>
+      <div class="feature"><div class="num">02</div><h3>Nothing gets left behind</h3><p>Off really means off: no leftover virtual device, no changed default output, no service quietly running in the background.</p></div>
+      <div class="feature"><div class="num">03</div><h3>Independent volume per device</h3><p>Everyone sets their own level. Turning the speakers down doesn't touch the headphones next to them.</p></div>
+      <div class="feature"><div class="num">04</div><h3>Different sample rates? No problem</h3><p>A 192 kHz output can mirror to a 48 kHz headset. Mirrik converts on the fly so you don't have to think about it.</p></div>
+      <div class="feature"><div class="num">05</div><h3>Survives you changing things</h3><p>Switch your main output mid-session and the mirror follows. Unplug a destination and its row stays, waiting. With the window open it rejoins by itself; otherwise the next window or command picks it up.</p></div>
+      <div class="feature"><div class="num">06</div><h3>Keyboard-driven, plus a real CLI</h3><p>The window runs entirely from the keyboard. Everything it can do is also a command, with <code>--json</code> on anything that reports something.</p></div>
+    </div>
+  </section>
+
+  <section id="how" class="how">
+    <div class="how-intro">
+      <div class="kicker">How it works</div>
+      <h2>No virtual device, on either platform.</h2>
+      <p>On Windows, a WASAPI loopback client captures whatever the default output is playing
+      and pushes copies to each destination. On Linux, a PipeWire loopback taps the monitor of
+      your current sink. Neither side ever creates a device of its own. That's not an
+      implementation detail, it's the whole point. Each mirrored destination is kept alive by
+      its own small background process, so if that process ever dies, that destination is
+      simply gone. Nothing can outlive a crash.</p>
+    </div>
+    <div>
+      <div class="step"><div class="n">1</div><div><h3>Summon the window</h3><p>One hotkey opens it, centred, ready for the keyboard: no mouse required from here on.</p></div></div>
+      <div class="step"><div class="n">2</div><div><h3>Pick your devices</h3><p><code>&uarr;</code> <code>&darr;</code> move the focus, <code>Enter</code> adds or removes, <code>&larr;</code> <code>&rarr;</code> nudge a fader in 5% steps, and <code>1</code>&ndash;<code>9</code> toggle a device directly. Had a set on last time? <code>Space</code> takes it back.</p></div></div>
+      <div class="step"><div class="n">3</div><div><h3>Close whenever</h3><p><code>Esc</code> closes the window and the mirror carries on. <code>x</code> stops it, everywhere at once.</p></div></div>
+    </div>
+  </section>
+
+  <section id="install">
+    <div class="install-head">
+      <div>
+        <div class="kicker">Install guide</div>
+        <h2>Pick your platform.</h2>
+      </div>
+      <div class="tabs" role="tablist">
+        <button type="button" class="tab active" role="tab" id="tab-linux" aria-controls="panel-linux" aria-selected="true" data-platform="linux">Linux</button>
+        <button type="button" class="tab" role="tab" id="tab-windows" aria-controls="panel-windows" aria-selected="false" data-platform="windows">Windows</button>
+        <button type="button" class="tab" role="tab" id="tab-source" aria-controls="panel-source" aria-selected="false" data-platform="source">Build from source</button>
+      </div>
+    </div>
+
+    <div class="install-body">
+      <div class="install-steps">
+
+        <div class="platform-steps" id="panel-linux" role="tabpanel" aria-labelledby="tab-linux" data-platform="linux">
+          <div class="istep">
+            <div class="istep-head"><span class="n">01</span><span class="t">Check you have PipeWire</span></div>
+            <pre>pactl info | grep 'Server Name'</pre>
+            <p class="note">Needs to say PipeWire. Plain PulseAudio is refused on purpose, since a crash there would leave a loopback behind for good.</p>
+          </div>
+          <div class="istep">
+            <div class="istep-head"><span class="n">02</span><span class="t">Clone and run the guided installer</span></div>
+            <pre>git clone https://github.com/Kris-023/mirrik.git
+cd mirrik
+./install.sh</pre>
+            <p class="note">No root needed. It checks for the four required tools first and figures out the right key binding for your compositor or desktop.</p>
+          </div>
+          <div class="istep">
+            <div class="istep-head"><span class="n">03</span><span class="t">Changed your mind?</span></div>
+            <pre>./install.sh
+# then pick: 2) Show me how to remove it</pre>
+            <p class="note">There is no <code>--uninstall</code> flag. The script prints the commands, you run them. It kept track of what it wrote, so the list matches your install and nothing gets missed.</p>
+          </div>
+        </div>
+
+        <div class="platform-steps" id="panel-windows" role="tabpanel" aria-labelledby="tab-windows" data-platform="windows" style="display:none">
+          <div class="istep">
+            <div class="istep-head"><span class="n">01</span><span class="t">Download and check the release</span></div>
+            <pre>Get-FileHash -Algorithm SHA256 mirrik-0.1.1-windows-x86_64.zip</pre>
+            <p class="note">Grab <a href="https://github.com/Kris-023/mirrik/releases/latest">the latest release</a> and compare the hash against the <code>SHA256SUMS</code> file published beside it. That proves the download arrived intact.</p>
+          </div>
+          <div class="istep">
+            <div class="istep-head"><span class="n">02</span><span class="t">Unpack it, then run the guided installer</span></div>
+            <pre>powershell -ExecutionPolicy Bypass -File install.ps1</pre>
+            <p class="note">Unzip it first and run this from inside that folder. No admin rights. It adds both programs to <code>PATH</code> and offers a Start-menu shortcut with a hotkey.</p>
+          </div>
+          <div class="istep">
+            <div class="istep-head"><span class="n">03</span><span class="t">Expect a SmartScreen prompt</span></div>
+            <p class="note">Choose <strong>More info</strong>, then <strong>Run anyway</strong>. Mirrik isn&rsquo;t code-signed, so Windows warns about it either way. The source is here if you&rsquo;d rather build it yourself.</p>
+          </div>
+          <div class="istep">
+            <div class="istep-head"><span class="n">04</span><span class="t">Changed your mind?</span></div>
+            <pre>powershell -ExecutionPolicy Bypass -File install.ps1 -Uninstall</pre>
+            <p class="note">Shows everything it found before removing any of it.</p>
+          </div>
+        </div>
+
+        <div class="platform-steps" id="panel-source" role="tabpanel" aria-labelledby="tab-source" data-platform="source" style="display:none">
+          <div class="istep">
+            <div class="istep-head"><span class="n">01</span><span class="t">Clone</span></div>
+            <pre>git clone https://github.com/Kris-023/mirrik.git
+cd mirrik</pre>
+          </div>
+          <div class="istep">
+            <div class="istep-head"><span class="n">02</span><span class="t">Build</span></div>
+            <pre>cargo build --release</pre>
+            <p class="note">Needs Rust 1.95 or newer. That floor comes from egui/eframe, not from Mirrik itself.</p>
+          </div>
+          <div class="istep">
+            <div class="istep-head"><span class="n">03</span><span class="t">Install the binaries</span></div>
+            <pre>install -Dm755 target/release/mirrik     ~/.local/bin/mirrik
+install -Dm755 target/release/mirrik-gui ~/.local/bin/mirrik-gui</pre>
+            <p class="note">On Windows, just put mirrik.exe and mirrik-gui.exe somewhere permanent instead.</p>
+          </div>
+        </div>
+
+      </div>
+
+      <div class="reqs">
+        <div class="kicker" id="reqs-title">Linux requirements</div>
+        <div id="reqs-list">
+          <div class="req-row"><div class="req-k">Audio server</div><div class="req-v">PipeWire (module-loopback)</div></div>
+          <div class="req-row"><div class="req-k">Tools needed</div><div class="req-v">pactl, pw-cli, pw-dump, pw-metadata</div></div>
+          <div class="req-row"><div class="req-k">Compositors</div><div class="req-v">Hyprland, Sway, i3, GNOME, KDE, more</div></div>
+        </div>
+        <p id="reqs-note">The installer tells you exactly what to run if a tool is missing.
+        Debian, Ubuntu, Fedora (incl. rpm-ostree), Arch, openSUSE, Alpine, Void, Gentoo and
+        NixOS are all recognised.</p>
+      </div>
+    </div>
+  </section>
+
+  <section id="faq">
+    <div class="section-head tight">
+      <div class="kicker">FAQ</div>
+      <h2>Asked often.</h2>
+    </div>
+    <div id="faq-list">
+      <div class="faq-item open">
+        <button type="button" class="faq-q" aria-expanded="true"><span>Does mirroring add latency?</span><span class="faq-sign">–</span></button>
+        <p class="faq-a">A little: about 30 ms on Windows, 42 ms on Linux. You only hear it if two speakers share a room. Bluetooth is a different story, roughly 200 ms on top, and that one you do notice, so those destinations say so in the window.</p>
+      </div>
+      <div class="faq-item">
+        <button type="button" class="faq-q" aria-expanded="false"><span>Can I mix Bluetooth and wired outputs?</span><span class="faq-sign">+</span></button>
+        <p class="faq-a">Yes. Analogue, USB, HDMI and Bluetooth outputs all work together, and if their sample rates don't match, Mirrik converts on the fly.</p>
+      </div>
+      <div class="faq-item">
+        <button type="button" class="faq-q" aria-expanded="false"><span>How many devices can I mirror to?</span><span class="faq-sign">+</span></button>
+        <p class="faq-a">You're not limited to two: mix and match as many outputs as you want.</p>
+      </div>
+      <div class="faq-item">
+        <button type="button" class="faq-q" aria-expanded="false"><span>Does it remember my setup after a reboot?</span><span class="faq-sign">+</span></button>
+        <p class="faq-a">It keeps the set, but never switches it on again by itself. After a reboot sound plays to one device, as normal. Open the window and the rows you had on say &ldquo;from last time&rdquo;, still off. <code>Space</code> takes them.</p>
+      </div>
+      <div class="faq-item">
+        <button type="button" class="faq-q" aria-expanded="false"><span>Why does Windows warn me when I run it?</span><span class="faq-sign">+</span></button>
+        <p class="faq-a">Mirrik has no code-signing certificate; those cost real money and this is a hobby project. The dialog means &ldquo;Microsoft hasn&rsquo;t seen this program often&rdquo;, not &ldquo;this is dangerous&rdquo;. The source is in the repo if you&rsquo;d rather build it yourself.</p>
+      </div>
+      <div class="faq-item">
+        <button type="button" class="faq-q" aria-expanded="false"><span>Why won't it run on plain PulseAudio?</span><span class="faq-sign">+</span></button>
+        <p class="faq-a">There the loopback belongs to the audio daemon. If Mirrik crashed, it would keep running with no way to clean it up. So Mirrik refuses to start and says why. PipeWire&rsquo;s PulseAudio layer is fine.</p>
+      </div>
+      <div class="faq-item">
+        <button type="button" class="faq-q" aria-expanded="false"><span>What about macOS?</span><span class="faq-sign">+</span></button>
+        <p class="faq-a">Not yet. Nobody's written that backend.</p>
+      </div>
+    </div>
+  </section>
+
+  <section id="download" class="cta">
+    <div class="cta-inner">
+      <h2>Get Mirrik. It's free, and the source is right here.</h2>
+      <div class="row">
+        <a class="btn btn-white" href="https://github.com/Kris-023/mirrik/releases/download/v0.1.1/mirrik-0.1.1-windows-x86_64.zip">Download for Windows</a>
+        <a class="btn btn-white" href="https://github.com/Kris-023/mirrik/releases/download/v0.1.1/mirrik-0.1.1-linux-x86_64.tar.gz">Download for Linux</a>
+        <a class="btn btn-invert" href="https://github.com/Kris-023/mirrik">Source on GitHub</a>
+      </div>
+    </div>
+  </section>
+
+  <footer>
+    <div>
+      <div class="fbrand"><span class="dot"></span>MIRRIK</div>
+      <p>Play the same sound on two or more output devices at once, on Windows and Linux. MIT licensed.</p>
+    </div>
+    <div class="fcol">
+      <div class="fcol-title">Product</div>
+      <a href="#features">Features</a>
+      <a href="#how">How it works</a>
+      <a href="#install">Install</a>
+    </div>
+    <div class="fcol">
+      <div class="fcol-title">Docs</div>
+      <a href="https://github.com/Kris-023/mirrik#getting-it-installed">Install guide</a>
+      <a href="https://github.com/Kris-023/mirrik#using-it-day-to-day">Keyboard shortcuts</a>
+      <a href="https://github.com/Kris-023/mirrik#the-command-line">CLI reference</a>
+    </div>
+    <div class="fcol">
+      <div class="fcol-title">Project</div>
+      <a href="https://github.com/Kris-023/mirrik">GitHub</a>
+      <a href="https://github.com/Kris-023/mirrik/issues">Issues</a>
+      <a href="https://github.com/Kris-023/mirrik/blob/main/LICENSE">Licence</a>
+    </div>
+  </footer>
+
+  <div class="bottom">© 2026 Kris-023 · MIT · built in Rust with egui</div>
+</div>
+
+<script>
+(function(){
+  /* Die Unterlage liegt hinter den Reitern und gleitet zum aktiven - eine Flaeche,
+     die sich bewegt, statt drei, die umschalten. */
+  const tabsBox = document.querySelector('.tabs');
+  const ink = document.createElement('span');
+  ink.className = 'tab-ink';
+  if (tabsBox) tabsBox.insertBefore(ink, tabsBox.firstChild);
+  /* Mit offsetWidth/offsetLeft gerechnet ragte die Unterlage rechts unter dem naechsten
+     Reiter hervor: offsetWidth rundet auf ganze Pixel (69,7 -> 70) und offsetLeft zaehlt
+     den 2px-Rahmen der Leiste nicht mit. getBoundingClientRect liefert beides exakt, und
+     absolute Positionierung bezieht sich auf die Padding-Box - der Rahmen muss also raus. */
+  /* Zwei Dinge, die zusammen den einen Pixel erzeugt haben, der bei 100% Skalierung
+     rechts neben dem Trennstrich stand (bei 125% und mehr fiel er zufaellig auf ein
+     volles Geraetepixel und war unsichtbar):
+
+     1. Der Trennstrich gehoert dem Reiter, nicht seiner Flaeche. getBoundingClientRect
+        misst ihn mit, also muss die Randbreite abgezogen werden - sonst liegt die
+        Flaeche unter dem Strich und schaut rechts daneben hervor.
+     2. Gebrochene Kanten (der Reiter ist 69,70px breit) ergeben einen halbtransparenten
+        Randpixel. Deshalb auf ganze Geraetepixel legen, und zwar immer nach INNEN:
+        Breite abrunden, Anfang aufrunden. Lieber ein Drittel Pixel zu schmal - das liegt
+        unter dem Strich - als ein Pixel zu breit. */
+  function inkTo(tab){
+    if (!tabsBox || !tab) return;
+    const r = window.devicePixelRatio || 1;
+    const t = tab.getBoundingClientRect();
+    const b = tabsBox.getBoundingClientRect();
+    const cs = getComputedStyle(tab);
+    const bl = parseFloat(getComputedStyle(tabsBox).borderLeftWidth) || 0;
+    const br = parseFloat(cs.borderRightWidth) || 0;
+    ink.style.width = Math.floor((t.width - br) * r) / r + 'px';
+    ink.style.transform = 'translate3d(' + Math.ceil((t.left - b.left - bl) * r) / r + 'px,0,0)';
+    ink.style.opacity = '1';
+    /* Erst jetzt gibt der Reiter seinen eigenen Hintergrund ab: liegt die Flaeche nicht,
+       bleibt er orange. Sonst steht der aktive Reiter unsichtbar da, falls dieser Aufruf
+       je ausbleibt - genau das passierte, als er nur an `load` hing und das Ereignis
+       schon durch war. */
+    tabsBox.classList.add('has-ink');
+  }
+  const inkNow = () => inkTo(document.querySelector('.tab.active'));
+  inkNow();                                    /* sofort, nicht erst auf load */
+  addEventListener('load', inkNow);
+  addEventListener('resize', inkNow);
+  /* Die Reiterbreiten haengen an der Schrift - nach dem Nachladen neu vermessen. */
+  if (document.fonts && document.fonts.ready) document.fonts.ready.then(inkNow);
+
+  document.querySelectorAll('.tab').forEach(tab => {
+    tab.addEventListener('click', () => {
+      const p = tab.dataset.platform;
+      document.querySelectorAll('.tab').forEach(t => {
+        t.classList.toggle('active', t === tab);
+        t.setAttribute('aria-selected', t === tab ? 'true' : 'false');
+      });
+      /* Erst die alte Hoehe festhalten, dann tauschen, dann auf die neue fahren -
+         sonst springt die halbe Seite beim Wechsel. */
+      const box = document.querySelector('.install-steps');
+      const from = box.offsetHeight;
+      document.querySelectorAll('.platform-steps').forEach(el => {
+        el.style.display = el.dataset.platform === p ? '' : 'none';
+        if (el.dataset.platform === p) { el.style.animation = 'none'; void el.offsetWidth; el.style.animation = ''; }
+      });
+      const to = box.offsetHeight;
+      if (!matchMedia('(prefers-reduced-motion: reduce)').matches && from !== to) {
+        box.style.height = from + 'px';
+        requestAnimationFrame(() => { box.style.height = to + 'px'; });
+        setTimeout(() => { box.style.height = ''; }, 420);
+      }
+      inkTo(tab);
+      const reqs_box = document.querySelector('.reqs');
+      if (reqs_box) { reqs_box.classList.add('is-swap'); setTimeout(() => reqs_box.classList.remove('is-swap'), 220); }
+      const reqs = {
+        linux: {
+          title: 'Linux requirements',
+          note: 'The installer tells you exactly what to run if a tool is missing. Debian, Ubuntu, Fedora (incl. rpm-ostree), Arch, openSUSE, Alpine, Void, Gentoo and NixOS are all recognised.',
+          rows: [
+            ['Audio server', 'PipeWire (module-loopback)'],
+            ['Tools needed', 'pactl, pw-cli, pw-dump, pw-metadata'],
+            ['Compositors', 'Hyprland, Sway, i3, GNOME, KDE, more']
+          ]
+        },
+        windows: {
+          title: 'Windows requirements',
+          note: 'The installer checks your Windows version, architecture and display driver before it copies anything. The window itself is OpenGL and may not open over Remote Desktop.',
+          rows: [
+            ['OS', 'Windows 10 or 11'],
+            ['Audio API', 'WASAPI loopback'],
+            ['Admin rights', 'not required'],
+            ['Code signing', 'none (expect a SmartScreen prompt)']
+          ]
+        },
+        source: {
+          title: 'Source requirements',
+          note: 'The same tree builds mirrik (CLI) and mirrik-gui (window) for whichever platform you\'re on. The two backend crates are separate, so a bare cargo build only pulls in the one matching your OS.',
+          rows: [
+            ['Rust', '1.95 or newer (stable)'],
+            ['Linux extra', 'C linker + ALSA and X11/Wayland headers'],
+            ['Windows extra', 'MSVC build tools'],
+            ['Workspace', '5 crates: core, backend-linux, backend-windows, cli, gui']
+          ]
+        }
+      };
+      const r = reqs[p];
+      document.getElementById('reqs-title').textContent = r.title;
+      document.getElementById('reqs-note').textContent = r.note;
+      document.getElementById('reqs-list').innerHTML = r.rows.map(([k,v]) =>
+        `<div class="req-row"><div class="req-k">${k}</div><div class="req-v">${v}</div></div>`
+      ).join('');
+    });
+  });
+
+  // --- Theme -----------------------------------------------------------------
+  const root = document.documentElement;
+  const themeBtn = document.getElementById('theme-toggle');
+  const darkQuery = matchMedia('(prefers-color-scheme: dark)');
+  // Ohne data-theme gilt die Systemwahl; der Button setzt sie nur ausser Kraft.
+  const activeTheme = () => root.getAttribute('data-theme') || (darkQuery.matches ? 'dark' : 'light');
+  function syncTheme(){
+    const dark = activeTheme() === 'dark';
+    const label = dark ? 'Switch to light theme' : 'Switch to dark theme';
+    themeBtn.setAttribute('aria-pressed', String(dark));
+    themeBtn.setAttribute('aria-label', label);
+    themeBtn.title = label;
+  }
+  themeBtn.addEventListener('click', () => {
+    const next = activeTheme() === 'dark' ? 'light' : 'dark';
+    root.setAttribute('data-theme', next);
+    try { localStorage.setItem('mirrik-theme', next); } catch(e) {}
+    syncTheme();
+  });
+  darkQuery.addEventListener('change', syncTheme);
+  syncTheme();
+
+  // --- Sprachmenue -----------------------------------------------------------
+  const lang = document.getElementById('lang');
+  const langBtn = document.getElementById('lang-btn');
+  function setLang(open){
+    lang.classList.toggle('open', open);
+    langBtn.setAttribute('aria-expanded', String(open));
+  }
+  langBtn.addEventListener('click', e => { e.stopPropagation(); setLang(!lang.classList.contains('open')); });
+  document.addEventListener('click', e => { if(!lang.contains(e.target)) setLang(false); });
+  document.addEventListener('keydown', e => {
+    if(e.key === 'Escape' && lang.classList.contains('open')){ setLang(false); langBtn.focus(); }
+  });
+
+  /* Jede Antwort bekommt einen Wrapper: nur so laesst sich eine unbekannte Hoehe
+     animieren, ohne irgendwo eine geratene max-height zu hinterlegen. */
+  document.querySelectorAll('.faq-a').forEach(a => {
+    const wrap = document.createElement('div');
+    wrap.className = 'faq-wrap';
+    a.parentNode.insertBefore(wrap, a);
+    wrap.appendChild(a);
+  });
+  const slide = (item, open) => {
+    const wrap = item.querySelector('.faq-wrap');
+    if (!wrap) return;
+    const still = matchMedia('(prefers-reduced-motion: reduce)').matches;
+    const target = wrap.scrollHeight;
+    if (still) { wrap.style.height = open ? 'auto' : '0px'; return; }
+    wrap.style.height = (open ? 0 : target) + 'px';
+    requestAnimationFrame(() => {
+      wrap.style.height = (open ? target : 0) + 'px';
+    });
+    if (open) setTimeout(() => {          /* danach frei: der Text darf umbrechen */
+      if (item.classList.contains('open')) wrap.style.height = 'auto';
+    }, 420);
+  };
+  /* Beim Laden steht eine Antwort offen - die bekommt ihre Hoehe ohne Bewegung. */
+  document.querySelectorAll('.faq-item.open .faq-wrap').forEach(w => { w.style.height = 'auto'; });
+
+  document.querySelectorAll('.faq-q').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const item = btn.closest('.faq-item');
+      const willOpen = !item.classList.contains('open');
+      item.classList.toggle('open', willOpen);
+      btn.setAttribute('aria-expanded', String(willOpen));
+      const sign = btn.querySelector('.faq-sign');
+      sign.textContent = willOpen ? '–' : '+';
+      sign.classList.remove('is-flip'); void sign.offsetWidth; sign.classList.add('is-flip');
+      slide(item, willOpen);
+    });
+  });
+})();
+</script>
+<script>
+/* ---------------------------------------------------------------- Panel-Demo
+   Das Panel im Kopf ist ein bedienbarer Nachbau des Fensters, kein Bild. Jeder Zustand
+   ist ein echter: Ueberschrift, Kopfzeile, Mixer-Beschriftung, Zaehler, Zeilentexte und
+   die beiden Hinweiszeilen folgen derselben Logik wie crates/gui/src/main.rs. Wird dort
+   ein Text umformuliert, gehoert er auch hierher.
+
+   Es fuehrt sich selbst vor, solange niemand hinsieht - und hoert damit auf, sobald
+   jemand es anfasst: Zeigen ist der Ersatz fuer Bedienen, nicht deren Konkurrent. */
+(function(){
+  var panel = document.getElementById('demo');
+  if (!panel) return;
+  var reduce = matchMedia('(prefers-reduced-motion: reduce)');
+
+  var el = {
+    dot:   document.getElementById('d-dot'),
+    title: document.getElementById('d-title'),
+    sub:   document.getElementById('d-sub'),
+    note:  document.getElementById('d-master-note'),
+    count: document.getElementById('d-count'),
+    move:  document.getElementById('d-hint-move'),
+    leave: document.getElementById('d-hint-leave'),
+    focus: document.getElementById('d-focus'),
+    key:   document.getElementById('d-key'),
+    hint:  document.getElementById('demo-note'),
+    mixer: panel.querySelector('.p-mixer')
+  };
+  var rows   = [].slice.call(panel.querySelectorAll('[data-dev]'));
+  var faders = [].slice.call(panel.querySelectorAll('[data-fader]'));
+  var srcFad = panel.querySelector('[data-src]');
+  var source = 'Ryzen HD Audio Controller Analog Stereo';
+  var srcVol = 62;                       /* der Regler des Standardgeraets */
+
+  var dev = [
+    {short:'AirPods Max USB', lat:42,  vol:85, bt:false},
+    {short:'WH-1000XM3',      lat:242, vol:56, bt:true}
+  ];
+  var on = [true,true], last = [], focus = {kind:'dev', i:1};
+  var taken = false, visible = false, hover = false, wake = null;
+
+  function mirroring(){ return on[0] || on[1]; }
+
+  function meta(i){
+    var d = dev[i], t;
+    if (on[i])                     t = '~' + d.lat + ' ms · ' + d.vol + ' %';
+    else if (last.indexOf(i) > -1) t = 'from last time · Space loads the set';
+    else                           t = 'idle';
+    return d.bt ? t + ' · Bluetooth' : t;
+  }
+
+  function render(){
+    var n = (on[0]?1:0) + (on[1]?1:0);
+    var live = mirroring();
+
+    el.dot.classList.toggle('is-off', !live);
+    el.title.textContent = live ? ('Mirroring to ' + n + ' device' + (n === 1 ? '' : 's'))
+                                : 'Not mirroring';
+    el.sub.textContent = live ? dev.filter(function(d,i){return on[i];})
+                                   .map(function(d){return d.short;}).join('  ·  ')
+                              : source;
+    el.note.innerHTML = live ? '&mdash; this device only' : '&mdash; current output device';
+    el.count.textContent = n + ' / 2 active';
+
+    rows.forEach(function(r,i){
+      r.classList.toggle('is-on', on[i]);
+      r.querySelector('.dm').textContent = meta(i);
+      r.querySelector('.p-tag').textContent = on[i] ? 'ON' : 'OFF';
+    });
+
+    faders.forEach(function(f,i){
+      f.classList.toggle('is-hidden', !on[i]);
+      f.querySelector('.p-vol').textContent = dev[i].vol + ' %';
+      f.querySelector('.p-track').style.setProperty('--pct', dev[i].vol + '%');
+      f.classList.toggle('is-focus', focus.kind === 'fader' && focus.i === i);
+    });
+    srcFad.querySelector('.p-vol').textContent = srcVol + ' %';
+    srcFad.querySelector('.p-track').style.setProperty('--pct', srcVol + '%');
+    srcFad.classList.toggle('is-focus', focus.kind === 'src');
+    rows.forEach(function(r,i){ r.classList.toggle('is-focus', focus.kind === 'dev' && focus.i === i); });
+
+    el.move.textContent = focus.kind === 'fader'
+      ? 'up/down focus · left/right volume · 1-9 toggle'
+      : (live ? 'up/down focus · Enter add or remove · 1-9 direct'
+              : 'up/down focus · Enter mirror here · 1-9 direct');
+    el.leave.textContent = live ? 'x stop mirroring · Esc close, mirror keeps running'
+                                : (last.length ? 'Space mirror to last set · Esc close'
+                                               : 'Esc close');
+    place();
+  }
+
+  /* Der Mixer haelt die Hoehe seines vollsten Zustands. Ohne das wird das Panel
+     kuerzer, sobald ein Ziel-Fader verschwindet, und die halbe Seite rutscht nach.
+     Gemessen statt gerechnet, weil beide Themes verschiedene Schriften benutzen. */
+  function reserve(){
+    var hidden = faders.map(function(f){ return f.classList.contains('is-hidden'); });
+    panel.style.minHeight = '';
+    faders.forEach(function(f){ f.classList.remove('is-hidden'); });
+    var h = panel.offsetHeight;
+    faders.forEach(function(f,i){ f.classList.toggle('is-hidden', hidden[i]); });
+    panel.style.minHeight = h + 'px';
+    place();
+  }
+
+  function place(){
+    if (reduce.matches) return;
+    var t = focus.kind === 'src'   ? srcFad
+          : focus.kind === 'fader' ? faders[focus.i]
+          : rows[focus.i];
+    if (!t || t.classList.contains('is-hidden')) { el.focus.classList.remove('is-live'); return; }
+    el.focus.classList.add('is-live','is-jump');
+    el.focus.style.height = t.offsetHeight + 'px';
+    el.focus.style.transform = 'translate3d(0,' + t.offsetTop + 'px,0)';
+    setTimeout(function(){ el.focus.classList.remove('is-jump'); }, 170);
+  }
+
+  function hit(label){
+    if (reduce.matches) return;
+    el.key.textContent = label;
+    el.key.classList.remove('is-hit');
+    void el.key.offsetWidth;
+    el.key.classList.add('is-hit');
+  }
+
+  function sweep(i){
+    if (reduce.matches) return;
+    var r = rows[i];
+    r.classList.remove('is-sweep');
+    void r.offsetWidth;
+    r.classList.add('is-sweep');
+  }
+
+  /* ------------------------------------------------------------ Bedienung */
+  function toggle(i, label){
+    hit(label || String(i + 1));
+    on[i] = !on[i];
+    if (on[i]) { last = []; }
+    focus = {kind:'dev', i:i};
+    render();
+    if (on[i]) sweep(i);
+  }
+  function stopAll(){
+    hit('x');
+    last = on.map(function(v,i){ return v ? i : -1; }).filter(function(i){ return i > -1; });
+    on = [false,false];
+    render();
+  }
+  function loadLast(){
+    if (mirroring() || !last.length) return;
+    hit('Space');
+    last.forEach(function(i){ on[i] = true; });
+    last = [];
+    render();
+    rows.forEach(function(r,i){ if (on[i]) setTimeout(function(){ sweep(i); }, i * 110); });
+  }
+  function volume(step){
+    if (focus.kind === 'src') {
+      srcVol = Math.max(0, Math.min(100, srcVol + step));
+    } else if (focus.kind === 'fader') {
+      var d = dev[focus.i];
+      d.vol = Math.max(0, Math.min(100, d.vol + step));
+    } else return;
+    hit(step < 0 ? '←' : '→');
+    render();
+  }
+  function chain(){                      /* dieselbe Reihenfolge wie im Fenster: Quelle, Ziele, Geraete */
+    var c = [{kind:'src', i:0}];
+    faders.forEach(function(f,i){ if (on[i]) c.push({kind:'fader', i:i}); });
+    rows.forEach(function(r,i){ c.push({kind:'dev', i:i}); });
+    return c;
+  }
+  function moveFocus(dir){
+    var c = chain(), at = 0;
+    c.forEach(function(f,i){ if (f.kind === focus.kind && f.i === focus.i) at = i; });
+    var next = c[Math.max(0, Math.min(c.length - 1, at + dir))];
+    if (next) { focus = next; hit(dir < 0 ? '↑' : '↓'); render(); }
+  }
+
+  function take(){                       /* ab jetzt gehoert das Panel dem Besucher */
+    if (taken) return;
+    taken = true;
+    if (wake) wake();
+    el.hint.innerHTML = 'Yours now: <kbd>1</kbd> <kbd>2</kbd> toggle, ' +
+                        '<kbd>Space</kbd> last set, <kbd>x</kbd> stop';
+  }
+
+  panel.setAttribute('data-live', '');
+  panel.addEventListener('pointerenter', function(){ hover = true; if (wake) wake(); });
+  panel.addEventListener('pointerleave', function(){ hover = false; });
+
+  panel.addEventListener('click', function(e){
+    var row = e.target.closest('[data-dev]');
+    var fad = e.target.closest('[data-fader]');
+    var src = e.target.closest('[data-src]');
+    if (!row && !fad && !src) return;
+    take();
+    panel.focus({preventScroll:true});
+    if (row) { toggle(rows.indexOf(row)); return; }
+    focus = src ? {kind:'src', i:0} : {kind:'fader', i:faders.indexOf(fad)};
+    var track = e.target.closest('.p-track');
+    if (track) {                          /* Klick auf die Schiene setzt den Wert, in 5%-Schritten */
+      var r = track.getBoundingClientRect();
+      var v = Math.max(0, Math.min(100, Math.round((e.clientX - r.left) / r.width * 20) * 5));
+      if (src) srcVol = v; else dev[focus.i].vol = v;
+    }
+    render();
+  });
+
+  panel.addEventListener('keydown', function(e){
+    var k = e.key;
+    if (k === '1' || k === '2') { take(); toggle(Number(k) - 1, k); }
+    else if (k === ' ' || k === 'Spacebar') { take(); loadLast(); }
+    else if (k === 'x' || k === 'X') { take(); if (mirroring()) stopAll(); }
+    else if (k === 'ArrowUp')    { take(); moveFocus(-1); }
+    else if (k === 'ArrowDown')  { take(); moveFocus(1); }
+    else if (k === 'ArrowLeft')  { take(); volume(-5); }
+    else if (k === 'ArrowRight') { take(); volume(5); }
+    else if (k === 'Enter') { take(); if (focus.kind === 'dev') toggle(focus.i, 'Enter'); }
+    else if (k === 's' || k === 'S') { take(); focus = {kind:'src', i:0}; render(); }
+    else return;
+    e.preventDefault();
+  });
+
+  new IntersectionObserver(function(e){
+    visible = e[0].isIntersecting && !document.hidden;
+  }, {threshold:.35}).observe(panel);
+  document.addEventListener('visibilitychange', function(){
+    if (document.hidden) visible = false;
+  });
+
+  var themeWatch = new MutationObserver(reserve);
+  themeWatch.observe(document.documentElement, {attributes:true, attributeFilter:['data-theme']});
+  addEventListener('resize', reserve);
+  if (document.fonts && document.fonts.ready) document.fonts.ready.then(reserve);
+
+  render();
+  reserve();
+
+  /* ------------------------------------------------------------ Vorfuehrung
+     Zwei Durchlaeufe, dann ist Ruhe. Wer bis dahin nicht eingestiegen ist, hat es
+     gesehen; eine Seite, auf der dauerhaft etwas zappelt, macht nervoes. */
+  var ROUNDS = 2;
+
+  /* Jede Wartezeit endet mit einem Blick darauf, ob ueberhaupt noch gezeigt werden
+     soll. Vorher wurde das nur einmal pro Durchlauf geprueft - die Maus auf dem Panel
+     hielt die Vorfuehrung erst am Ende an, was aussah, als reagiere sie gar nicht. */
+  function wait(ms){
+    return new Promise(function(res){
+      var id = setTimeout(done, ms);
+      wake = function(){ clearTimeout(id); done(); };
+      function done(){ wake = null; ready().then(res); }
+    });
+  }
+  function ready(){                       /* nur zeigen, wenn zu sehen und unberuehrt */
+    return new Promise(function(res){
+      (function poll(){
+        if (taken) return res();
+        (visible && !hover) ? res() : setTimeout(poll, 250);
+      })();
+    });
+  }
+
+  async function show(){
+    if (reduce.matches) return;
+    while (!taken && ROUNDS-- > 0) {
+      await ready();  if (taken) break;
+      await wait(1500);
+      if (!taken) { stopAll(); await wait(2300); }
+      if (!taken) { loadLast(); await wait(2100); }
+      if (!taken) { focus = {kind:'src', i:0}; hit('↑'); render(); await wait(900); }
+      for (var k = 0; k < 2 && !taken; k++) { volume(-5); await wait(430); }
+      if (!taken) { focus = {kind:'fader', i:0}; hit('↓'); render(); await wait(800); }
+      for (var k2 = 0; k2 < 3 && !taken; k2++) { volume(-5); await wait(430); }
+      if (!taken) await wait(1200);
+      if (!taken) { focus = {kind:'dev', i:1}; hit('↓'); render(); await wait(750); }
+      if (!taken) { toggle(1, '2'); await wait(1900); }
+      if (!taken) { toggle(1, '2'); await wait(1900); }
+      if (!taken) { dev[0].vol = 85; srcVol = 62; focus = {kind:'dev', i:1}; render(); await wait(900); }
+    }
+    if (!taken) {                         /* Ende der Vorfuehrung: sauberer Ausgangszustand */
+      on = [true,true]; last = []; dev[0].vol = 85; srcVol = 62;
+      focus = {kind:'dev', i:1}; render();
+    }
+  }
+  show();
+})();
+</script>
+</body>
+</html>
