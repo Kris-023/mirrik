@@ -82,8 +82,10 @@ converts them on the fly so you don't have to think about it.
   Windows, 42 ms on Linux). Bluetooth adds roughly 200 ms of its own, and Mirrik labels those
   destinations so you know before you notice it in your ears.
 - **Survives you changing things.** Switch your main output mid-session and the mirror
-  follows along. Unplug a destination and Mirrik doesn't panic or throw an error — it just
-  waits, ready to pick back up the moment the device returns.
+  follows along. Unplug a destination and Mirrik doesn't panic or throw an error — it keeps
+  the row and waits. While the window is open it rejoins the moment the device is back; with
+  no window open and no command running, the next one picks it up. Nothing of Mirrik watches
+  for devices on your behalf.
 - **Matches your system theme** automatically, light or OLED black.
 - **Fully keyboard-driven window**, plus a proper command line with `--json` on everything
   that reports something — script it however you like.
@@ -294,8 +296,8 @@ One thing worth remembering: closing the window does **not** stop the mirror. Th
 `Space` is the shortcut for "the same as yesterday". Mirrik writes down which destinations
 you had on, and offers them again the next time you open the window with nothing running. A
 device from that set that isn't plugged in right now is waited for, and joins the moment it
-shows up — but only for as long as the window is open. Nothing of Mirrik runs in the
-background, so nothing can be waiting for you once you close it.
+shows up — but only for as long as the window is open. Nothing of Mirrik watches for devices
+on its own, so nothing can be waiting for you once you close it.
 
 ### The command line
 
@@ -340,9 +342,11 @@ so each device's level really is its own — turning your speakers down won't qu
 headphones. If a driver happens to apply gain *before* that point, the fader tells you so
 honestly in the window instead of pretending it's in control.
 
-**Nothing gets remembered between sessions.** After a reboot, sound just plays to one device
-again, like normal. Mirroring is meant to be something you turn on deliberately for the
-moment someone's listening along with you — not a state Mirrik tries to restore for you.
+**Remembered, never restored.** After a reboot, sound just plays to one device again, like
+normal — mirroring stays something you turn on deliberately for the moment someone's
+listening along with you, not a state Mirrik puts back behind your back. What it does keep
+is the set you had on last: open the window and those rows say "from last time" — still off
+until `Space` takes them. Ignore them and nothing happens.
 
 **About the delay.** A mirrored device runs a touch behind the original — roughly 30 ms on
 Windows, 42 ms on Linux. In practice you won't notice unless two devices happen to be in the
