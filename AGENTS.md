@@ -78,7 +78,7 @@ this file doesn't have, ask rather than guess.
 | Shared logic that isn't platform-specific (device matching, volume math, state file) | `crates/core/src/` |
 | Window layout, keyboard focus, what's drawn | `crates/gui/src/main.rs` |
 | Colours, fonts, the two skins | `crates/gui/src/theme.rs` |
-| The app icon | `tools/make-icons.py` regenerates every format from one definition. Three places read it: `icon_rgba()` in `crates/gui/src/main.rs` (running window on Windows and X11), `crates/gui/build.rs` (the .exe resource, so Explorer and the Start menu), and the `Icon=` line `install.sh` writes (the only route on Wayland). Change one, change all three. |
+| The app icon | `tools/make-icons.py` regenerates every format from one definition. Three places read it: `icon_rgba()` in `crates/gui/src/main.rs` (running window on Windows and X11), `crates/gui/build.rs` (the .exe resource, so Explorer and the Start menu), and the `Icon=` line `install.sh` writes (the only route on Wayland). `install.sh` writes the SVG by default, or a 32x32 PNG when `ld.so.cache` has no SVG rasterizer — never both. Change one, change all three. |
 | PipeWire-specific behaviour | `crates/backend-linux/src/lib.rs` |
 | WASAPI-specific behaviour | `crates/backend-windows/src/lib.rs` |
 | Linux install/uninstall flow | `install.sh`, tested by `tools/linux/test-install.sh` |
@@ -145,7 +145,7 @@ project most likely to break silently on a platform nobody just tested by hand. 
 own test bench that fakes the whole environment rather than touching the real system:
 
 ```sh
-tools/linux/test-install.sh         # Linux installer, 182 cases
+tools/linux/test-install.sh         # Linux installer, 187 cases
 pwsh tools/windows/test-install.ps1 # Windows installer, 41 cases - runs on Linux, not on Windows
 ```
 

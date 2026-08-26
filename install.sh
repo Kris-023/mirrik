@@ -137,7 +137,9 @@ if [ -z "$MIRRIK_STATE_VERSION" ]; then
     [ -n "$MIRRIK_STATE_BINDIR" ] \
         && MIRRIK_STATE_FILES+=("$MIRRIK_STATE_BINDIR/mirrik" "$MIRRIK_STATE_BINDIR/mirrik-gui")
     [ -n "$MIRRIK_STATE_APPS" ]  && MIRRIK_STATE_FILES+=("$MIRRIK_STATE_APPS/mirrik.desktop")
-    [ -n "$MIRRIK_STATE_ICONS" ] && MIRRIK_STATE_FILES+=("$MIRRIK_STATE_ICONS/mirrik.svg")
+    [ -n "$MIRRIK_STATE_ICONS" ] && MIRRIK_STATE_FILES+=( \
+        "$MIRRIK_STATE_ICONS/mirrik.svg" \
+        "$MIRRIK_STATE_ICONS/mirrik.png" )
 elif [ "$MIRRIK_STATE_VERSION" -gt "$STATE_FORMAT" ] 2>/dev/null; then
     # Only the manifest, not every field: MIRRIK_STATE_BINDIR still has to work for the
     # "already installed" menu below, which is a coarser question (is *something* there)
@@ -177,8 +179,9 @@ mirrik_artifacts() {
     printf '%s\n' \
         "$bindir/mirrik" \
         "$bindir/mirrik-gui" \
-        "$apps/mirrik.desktop" \
-        "$icons/mirrik.svg"
+        "$apps/mirrik.desktop"
+    [ -f "$icons/mirrik.svg" ] && printf '%s\n' "$icons/mirrik.svg"
+    [ -f "$icons_png/mirrik.png" ] && printf '%s\n' "$icons_png/mirrik.png"
 }
 
 # The config file is the user's, never ours - Mirrik only ever reads it. That is exactly
@@ -369,6 +372,14 @@ fi
 # than linking them. `ldd mirrik-gui` lists libc and little else, so a missing one stays
 # invisible until the window refuses to open. The command line half doesn't care about
 # any of this, which is why this only warns instead of stopping the install.
+#
+# Step 4 uses the same capture to pick SVG vs PNG for the icon. Setting it in advance
+# keeps that branch safe on a headless run, where we never even ask ldconfig.
+ldconfig_cache=''
+# The PNG fallback icon's directory, set early for the same reason as ldconfig_cache:
+# mirrik_artifacts and the ground-truth check at the end read it, and on a headless
+# run step 4 (which sets it again for its own use) is never reached.
+icons_png="${XDG_DATA_HOME:-$HOME/.local/share}/icons/hicolor/32x32/apps"
 if [ -n "${WAYLAND_DISPLAY:-}${DISPLAY:-}" ] && have ldconfig; then
     # Captured once into a variable and matched with a plain `case`, not piped straight
     # into `grep -q`. With `set -o pipefail` on, a `grep -q` that finds its match early
@@ -677,7 +688,10 @@ apps="${XDG_DATA_HOME:-$HOME/.local/share}/applications"
 # hicolor/scalable is where every icon theme implementation looks first. The file
 # name has to match the Icon= line below, and that one has to match the app id the
 # window sets - break any link in that chain and Wayland finds no picture at all.
+# The PNG, when used, lives under a size directory instead - it has one resolution
+# and is not named scalable, so hicolor/32x32/apps is its place.
 icons="${XDG_DATA_HOME:-$HOME/.local/share}/icons/hicolor/scalable/apps"
+icons_png="${XDG_DATA_HOME:-$HOME/.local/share}/icons/hicolor/32x32/apps"
 if confirm '  Add it?'; then
     mkdir -p "$apps" "$icons"
     # Per the Desktop Entry Specification, an Exec path containing a space needs to sit
@@ -703,16 +717,47 @@ DESKTOP
     # a release archive, where crates/ is not there at all. A search path with a
     # fallback chain is not worth it for a rectangle. Keep in step with
     # tools/make-icons.py.
-    cat > "$icons/mirrik.svg" <<'ICON'
+    #
+    # Which form: the SVG, unless the ld.so.cache holds no SVG rasterizer. Without
+    # one an icon theme hands the launcher a plain-text .svg file and the window
+    # looks the same as before - which is exactly why we don't ship the PNG as a
+    # second copy next to the SVG (the theme would always pick the SVG when both
+    # are there, and the whole point here is "the icon shows up").
+    #
+    # The check reads the same `ldconfig -p` capture step 1 built for the GUI-library
+    # check when it ran. On a headless install step 1 never runs, so we ask ldconfig
+    # ourselves here - once, into a variable, same SIGPIPE-safe shape as everywhere
+    # else. If ldconfig is not around either, we default to SVG: that is the better
+    # guess on a desktop, and headless is exactly where nobody reads the icon anyway.
+    icon_cache="$ldconfig_cache"
+    [ -n "$icon_cache" ] || have ldconfig && icon_cache="$(ldconfig -p 2>/dev/null)"
+    case "$icon_cache" in
+        *librsvg*|*libqsvg*) : ;;
+        *)
+            # PNG path: written to its own directory, not the scalable one.
+            # See the note up at icons= for the matching SVG directory.
+            mkdir -p "$icons_png"
+            base64 -d > "$icons_png/mirrik.png" <<'ICON'
+iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAYAAABzenr0AAAASUlEQVR4nO3RsQ0AIRADQeMWoBD6r4JC/
+muAGHLkgJ3wklvJEl5XzsPX67z5sI1/+2mFmQAxQZgJEBOEmQAxQZgJEBOE+fkAYAELswQwFxfIzgA
+AAABJRU5ErkJggg==
+ICON
+            ok "  Icon written to $icons_png/mirrik.png"
+            ;;
+    esac
+    # The default above is the SVG; the PNG case has already taken care of itself.
+    [ -f "$icons_png/mirrik.png" ] || {
+        cat > "$icons/mirrik.svg" <<'ICON'
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
   <rect x="4" y="4" width="24" height="24" fill="#ec3013"/>
 </svg>
 ICON
+        ok "  Icon written to $icons/mirrik.svg"
+    }
     have update-desktop-database && update-desktop-database "$apps" 2>/dev/null || true
     have gtk-update-icon-cache \
         && gtk-update-icon-cache -qtf "$(dirname "$(dirname "$icons")")" 2>/dev/null || true
     ok "  Written to $apps/mirrik.desktop"
-    ok "  Icon written to $icons/mirrik.svg"
 else
     dim '  Skipped.'
 fi
@@ -1221,8 +1266,11 @@ say ''
 # on disk counts, regardless of whether this run wrote it or an earlier one did.
 state_apps=''
 [ -f "$apps/mirrik.desktop" ] && state_apps="$apps"
+# The icon lives in one of two directories - scalable/ for the SVG, 32x32/ for the PNG
+# fallback. At most one is ever on disk, so the field points at whichever has a file.
 state_icons=''
-[ -f "$icons/mirrik.svg" ] && state_icons="$icons"
+[ -f "$icons/mirrik.svg" ]     && state_icons="$icons"
+[ -f "$icons_png/mirrik.png" ] && state_icons="$icons_png"
 
 # The manifest, built the same ground-truth way: on disk counts, no matter which run put
 # it there.

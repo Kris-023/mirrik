@@ -173,13 +173,20 @@ for lib in libGL.so.1 libxkbcommon.so.0 libwayland-client.so.0 libX11.so.6; do
     esac
     printf '\t%s (libc6,x86-64) => /usr/lib/%s\n' "\$lib" "\$lib"
 done
-i=0
-while [ "\$i" -lt 4000 ]; do
-    printf '\tlibfiller%d.so.0 (libc6,x86-64) => /usr/lib/libfiller%d.so.0\n' "\$i" "\$i"
-    i=\$((i + 1))
-done
-exit 0
+    i=0
+    while [ "\$i" -lt 4000 ]; do
+        printf '\tlibfiller%d.so.0 (libc6,x86-64) => /usr/lib/libfiller%d.so.0\n' "\$i" "\$i"
+        i=\$((i + 1))
+    done
+    # The rasterizer entry, baked in when the case set noraster=no - an empty value
+    # leaves no trace in the output and the installer's icon step goes PNG.
+    $( [ "${STUB_RASTERIZER:-}" = no ] || printf "printf '\\tlibrsvg-2.so.2 (libc6,x86-64) => /usr/lib/librsvg-2.so.2\\\\n'\\n" )
+    exit 0
 EOF
+    # base64 decodes the embedded PNG. Real binary in the system.
+    if [[ "$missing" != *" base64 "* ]] && command -v base64 >/dev/null 2>&1; then
+        ln -sf "$(command -v base64)" "$d/base64"
+    fi
     chmod +x "$d"/* 2>/dev/null
     return 0
 }
@@ -187,14 +194,14 @@ EOF
 # opts: cfg= pre=none|empty|marker server= missing=a,b lua=1 nobins=1 nopath=1 repeat=N
 #       again=<answers for runs 2..N, when a second run asks something the first did not>
 #       hyprversion= preinstalled= cargoversion= stateonly=1 statedecoy=1 statepartial=1
-#       statenoexec=1 statefileunreadable=1 wayland=1 ldconfigmissing=lib
+#       statenoexec=1 statefileunreadable=1 wayland=1 ldconfigmissing=lib noraster=1
 run_case() {  # <name> <answers> <check-function> [opts]
     local name="$1" answers="$2" check="$3" opts="${4:-}"
     local cfg='' pre='empty' server='PulseAudio (on PipeWire 1.6.8)'
     local missing='' lua='' nobins='' nopath='' repeat=1 again='' pair kv
     local osrelease='' shell_for_case='' hyprversion='' preinstalled='' cargoversion='' stateonly=''
     local statedecoy='' statepartial='' statenoexec='' statefileunreadable=''
-    local wayland='' ldconfigmissing=''
+    local wayland='' ldconfigmissing='' noraster=''
     IFS=';' read -ra kv <<<"$opts"
     for pair in "${kv[@]}"; do
         [ -z "$pair" ] && continue
@@ -209,6 +216,7 @@ run_case() {  # <name> <answers> <check-function> [opts]
             statedecoy) statedecoy=1 ;; statepartial) statepartial=1 ;;
             statenoexec) statenoexec=1 ;; statefileunreadable) statefileunreadable=1 ;;
             wayland) wayland=1 ;; ldconfigmissing) ldconfigmissing="${pair#*=}" ;;
+            noraster) noraster=1 ;;
         esac
     done
 
@@ -216,7 +224,7 @@ run_case() {  # <name> <answers> <check-function> [opts]
     local stubs="$home/stubs"
     mkdir -p "$home/.config" "$home/.local/bin" "$home/.local/share/applications"
     STUB_HYPR_VERSION="$hyprversion" STUB_CARGO_VERSION="$cargoversion" \
-        STUB_LDCONFIG_MISSING="$ldconfigmissing" \
+        STUB_LDCONFIG_MISSING="$ldconfigmissing" STUB_RASTERIZER="${noraster:+no}" \
         make_stubs "$stubs" "$server" ${missing//,/ }
 
     if [ -n "$cfg" ] && [ "$pre" != none ]; then
@@ -353,18 +361,27 @@ installed_ok() {
 # The icon is written in the same step as the .desktop, and the Icon= line is what
 # ties the two together - on Wayland that line is the only route to an icon at all.
 # So all three are checked here: half of that step succeeding is still a failure.
-ICON_UNDER_TEST=".local/share/icons/hicolor/scalable/apps/mirrik.svg"
+# install.sh may write one of two formats, SVG (default, when there is a rasterizer
+# in the ld.so.cache) or PNG (when there is none). Both are counted here.
+ICON_SVG=".local/share/icons/hicolor/scalable/apps/mirrik.svg"
+ICON_PNG=".local/share/icons/hicolor/32x32/apps/mirrik.png"
 has_desktop() {
     local d="$HOME_UNDER_TEST/.local/share/applications/mirrik.desktop"
     [ -f "$d" ] || { echo ".desktop missing"; return 0; }
     grep -q '^Icon=mirrik$' "$d"                 || echo ".desktop has no Icon=mirrik line"
-    [ -f "$HOME_UNDER_TEST/$ICON_UNDER_TEST" ]   || echo "icon file missing"
+    # Exactly one icon file, never both: a theme with a rasterizer would pick the
+    # SVG over the PNG even when the PNG is the one we just installed, and we don't
+    # want to ship the rectangle twice for that.
+    [ -f "$HOME_UNDER_TEST/$ICON_SVG" ] || [ -f "$HOME_UNDER_TEST/$ICON_PNG" ] \
+        || echo "icon file missing"
+    # no_desktop variant below adds "neither one, whatever the format".
     return 0
 }
 no_desktop()  {
     installed_ok
     [ -f "$HOME_UNDER_TEST/.local/share/applications/mirrik.desktop" ] && echo ".desktop written despite declining"
-    [ -f "$HOME_UNDER_TEST/$ICON_UNDER_TEST" ]                        && echo "icon written despite declining"
+    [ -f "$HOME_UNDER_TEST/$ICON_SVG" ] && echo "svg icon written despite declining"
+    [ -f "$HOME_UNDER_TEST/$ICON_PNG" ] && echo "png icon written despite declining"
     return 0
 }
 check_appended() {
@@ -446,7 +463,9 @@ check_state_written() {   # the state file carries the right values for a block 
     grep -qF 'MIRRIK_STATE_FILES=(' "$f" || echo "manifest missing from the state"
     grep -qF "$HOME_UNDER_TEST/.local/share/applications/mirrik.desktop" "$f" \
         || echo "the .desktop is not in the manifest"
+    # The icon may be either the svg or the png - the installer never writes both.
     grep -qF "$HOME_UNDER_TEST/.local/share/icons/hicolor/scalable/apps/mirrik.svg" "$f" \
+        || grep -qF "$HOME_UNDER_TEST/.local/share/icons/hicolor/32x32/apps/mirrik.png" "$f" \
         || echo "the icon is not in the manifest"
     grep -qF '.local/state/mirrik' <<<"$OUT" || echo "the state file is not named in the closing block"
 }
@@ -868,10 +887,59 @@ test_target_debug_ignored() {
     rm -rf "$home"
 }
 
-# The actual new path none of the cases above choose: picking "2) show me how to remove
-# it" at the existing-installation menu. Run 1 sets up a Hyprland block, a PATH line and
-# a real binary pair, so run 2's listing has something to show in every category, not
-# just the bindir line.
+# --- PNG icon branch: no SVG rasterizer in the ldconfig output
+check_desktop_png() {
+    installed_ok
+    local d="$HOME_UNDER_TEST/.local/share/applications/mirrik.desktop"
+    [ -f "$d" ] || { echo ".desktop missing"; return 0; }
+    grep -q '^Icon=mirrik$' "$d"                    || echo ".desktop has no Icon=mirrik line"
+    [ -f "$HOME_UNDER_TEST/$ICON_PNG" ]             || echo "png icon missing"
+    [ -f "$HOME_UNDER_TEST/$ICON_SVG" ]             && echo "svg written too - installer should pick one format, not both"
+    # And the uninstall block has to know about the PNG too: exactly one entry, not two.
+    grep -qF "rm $HOME_UNDER_TEST/$ICON_PNG" <<<"$OUT" \
+        || echo "the uninstall block does not name the png"
+    # The uninstall text names the file *path*, not the filename - a bare `grep` for
+    # `mirrik.??g` here would count the written-to note as a second copy, so count only
+    # lines with an rm in them.
+    local n; n=$(grep -c "rm $HOME_UNDER_TEST/$ICON_PNG" <<<"$OUT" || true)
+    [ "$n" -le 1 ] || echo "the png is named $n times for removal, want at most one"
+}
+check_desktop_svg() {   # the default, now with a rasterizer in the stub
+    installed_ok; has_desktop
+    [ -f "$HOME_UNDER_TEST/$ICON_SVG" ] || echo "svg icon missing even though a rasterizer was present"
+    [ -f "$HOME_UNDER_TEST/$ICON_PNG" ] && echo "png written too - installer should pick one format, not both"
+}
+
+# Regression: a desktop without a rasterizer used to get the SVG anyway - the file
+# quietly did nothing in an icon theme with no librsvg/libqsvg in the ld.so.cache.
+# The svg branch has been green for a long time - this is the branch that was missing,
+# so the red test has to be able to fail for it by itself.
+test_state_icon_png_uninstall() {
+    local name='state-icon-png-shows-uninstall-commands'
+    local home path; read -r home path < <(setup_two_phase_home)
+
+    # Run 1 gets a fake install with a stub ldconfig that does not know the rasterizer
+    # - the binary that is there is enough, we only need the PNG this run writes.
+    local stubs="$home/stubs"
+    STUB_RASTERIZER=no make_stubs "$stubs" 'PulseAudio (on PipeWire 1.6.8)'
+    run_installer_once "$home" "$path" "$(a y 1 2 a 1 y)"
+
+    # Back to the real stubs for run 2, so the "existing installation" menu opens on
+    # its own. If run 1's PNG survives in the state file, run 2 has to name it.
+    make_stubs "$stubs" 'PulseAudio (on PipeWire 1.6.8)'
+    local out; out="$(run_installer_once "$home" "$path" "2")"
+    rm -f "$REPO/mirrik" "$REPO/mirrik-gui"
+
+    local problems=()
+    grep -qF "rm $home/$ICON_PNG" <<<"$out" \
+        || problems+=("the png rm command is missing")
+    grep -qF "rm $home/$ICON_SVG" <<<"$out" \
+        && problems+=("the svg rm command is there too - only one format was ever written")
+    [ -n "${VERBOSE:-}" ] && [ "${#problems[@]}" -gt 0 ] && printf '%s\n' "$out" | tail -20 | sed 's/^/        | /'
+
+    report_case "$name" "${problems[@]}"
+    rm -rf "$home"
+}
 test_state_legacy_migrates() {
     local name='state-legacy-file-migrates-to-manifest'
     local home path; read -r home path < <(setup_two_phase_home)
@@ -899,7 +967,9 @@ test_state_legacy_migrates() {
         || problems+=("the binary is missing after migrating a version-less state file")
     grep -qF "rm $home/.local/share/applications/mirrik.desktop" <<<"$out" \
         || problems+=("the .desktop is missing after migrating a version-less state file")
-    grep -qF "rm $home/$ICON_UNDER_TEST" <<<"$out" \
+    # The legacy migration only ever names the *svg* file - it is what the 0.1.0
+    # era script actually wrote. The new png format has no legacy file to migrate.
+    grep -qF "rm $home/$ICON_SVG" <<<"$out" \
         || problems+=("the icon is missing after migrating a version-less state file")
     [ -n "${VERBOSE:-}" ] && [ "${#problems[@]}" -gt 0 ] && printf '%s\n' "$out" | tail -20 | sed 's/^/        | /'
 
@@ -924,7 +994,7 @@ test_state_newer_file_ignored() {
         # refuse it because of the format number, not because there was nothing to read.
         printf 'MIRRIK_STATE_FILES=(%q %q)\n' \
             "$home/.local/share/applications/mirrik.desktop" \
-            "$home/$ICON_UNDER_TEST"
+            "$home/$ICON_SVG"
         printf "MIRRIK_STATE_PATH_RC=''\n"
         printf "MIRRIK_STATE_CONFIG=''\n"
         printf "MIRRIK_STATE_KEYBIND_KIND=''\n"
@@ -994,7 +1064,7 @@ test_state_uninstall_shown() {
         || problems+=("the config block removal hint is missing")
     grep -qF "rm $home/.local/share/applications/mirrik.desktop" <<<"$out" \
         || problems+=("the .desktop rm command is missing")
-    grep -qF "rm $home/$ICON_UNDER_TEST" <<<"$out" \
+    grep -qF "rm $home/$ICON_SVG" <<<"$out" \
         || problems+=("the icon rm command is missing")
     grep -q "rm -r $home/.local/state/mirrik" <<<"$out" \
         || problems+=("the state directory rm command is missing")
@@ -1108,6 +1178,12 @@ CASES=(
   "key-multichar-then-valid|,y,1,2,abc,a,1,y|check_appended|cfg=.config/hypr/hyprland.conf"
   "key-special-char-then-valid|,y,1,2,%,q,1,y|check_appended|cfg=.config/hypr/hyprland.conf"
   # --- stdin ends prematurely
+  # --- PNG icon branch, new in 0.1.2: a desktop with no SVG rasterizer in the
+  # ld.so.cache gets the PNG instead, and never both files at once.
+  "icon-png-without-rasterizer|$(a y 1 2 a 1 y)|check_desktop_png|wayland=1;noraster=1"
+  "icon-svg-with-rasterizer|$(a y 1 2 a 1 y)|check_desktop_svg|wayland=1"
+  "icon-declined-with-rasterizer|$(a n 1 2 a 2)|no_desktop|cfg=.config/hypr/hyprland.conf;wayland=1"
+  "icon-declined-without-rasterizer|$(a n 1 2 a 2)|no_desktop|cfg=.config/hypr/hyprland.conf;wayland=1;noraster=1"
   "eof-immediately||check_eof|cfg=.config/hypr/hyprland.conf"
   "eof-after-three|,y,1|check_eof|cfg=.config/hypr/hyprland.conf"
 )
@@ -1139,7 +1215,8 @@ for fn in test_state_switch_compositor test_state_switch_bindir \
           test_state_no_false_positive test_state_skip_carries_forward \
           test_state_source_into_new_target test_state_uninstall_shown \
           test_state_legacy_migrates test_state_newer_file_ignored \
-          test_state_config_hint test_target_debug_ignored; do
+          test_state_config_hint test_target_debug_ignored \
+          test_state_icon_png_uninstall; do
     [ -n "$filter" ] && [[ "$fn" != *"$filter"* ]] && continue
     "$fn"
 done

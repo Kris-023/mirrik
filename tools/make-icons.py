@@ -10,7 +10,9 @@ two, and one of the two always looks wrong.
 
 Writes into crates/gui/assets/:
     icon.ico   multi-size, for the Win32 resource (Explorer, shortcut, taskbar)
-    icon.png   256x256, fallback for icon themes without SVG support
+    icon.png   256x256, for icon themes without SVG support. install.sh carries its
+               own embedded 32x32 PNG (not this file) for the same fallback, so it
+               works from a release archive where crates/ is absent.
     icon.svg   for hicolor/scalable on Linux
 
 Keep in step with `icon_rgba()` in crates/gui/src/main.rs, which draws the same shape
