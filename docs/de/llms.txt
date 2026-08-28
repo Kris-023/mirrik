@@ -1,0 +1,147 @@
+# Mirrik
+
+> Spiegelt, was dein Rechner gerade abspielt, auf beliebig viele Ausgabegeräte
+> gleichzeitig — auf Windows und Linux, ohne je ein virtuelles Gerät zu erzeugen.
+
+Mirrik nimmt auf, was dein Rechner gerade abspielt, und schickt eine Kopie an so viele
+Ausgaben, wie du auswählst: Lautsprecher und Kopfhörer zusammen, zwei Headsets für einen
+Film, Spielton auf dem Sitz daneben, oder Musik ins Nebenzimmer über HDMI. Es gibt nichts
+vorab einzurichten — kein virtuelles Audiokabel, kein Extra-Treiber. Starte es, wenn du es
+brauchst, schließe es, und das System ist genauso sauber wie vorher.
+
+Das Unterscheidungsmerkmal: **es wird nie ein virtuelles Gerät erzeugt.** Anders als
+virtuelle Audiokabel, Voicemeeter oder `combine-sink` gibt es kein Kunstgerät, das du
+auswählen, dir merken oder wieder aufräumen musst; dein Standardausgabegerät wird nie
+geändert, und andere Programme merken nichts. Schalte es ab, und nichts bleibt zurück.
+
+- Version: 0.1.1
+- Lizenz: MIT
+- Sprache: Rust (GUI in egui/eframe)
+- Repository: https://github.com/Kris-023/mirrik
+- Landing Page (EN): https://kris-023.github.io/mirrik/
+- Landing Page (DE): https://kris-023.github.io/mirrik/de/
+
+## Plattform-Unterstützung
+
+| Plattform | Unterstützt | Mechanismus |
+|---|---|---|
+| Windows 10 / 11 | ja | WASAPI-Loopback-Aufnahme, Render-Client pro Ziel |
+| Linux (PipeWire) | ja | `module-loopback` tappt den Monitor der aktuellen Senke |
+| Linux (nur PulseAudio) | nein | bewusst abgelehnt: bei Crash bliebe ein Loopback dauerhaft zurück |
+| macOS | noch nicht | kein Backend geschrieben |
+
+PipeWires PulseAudio-Kompatibilitätsschicht ist in Ordnung; nur reines PulseAudio wird
+abgelehnt.
+
+## Fähigkeiten
+
+- Spiegel auf eine unbegrenzte Zahl von Zielen, einzeln hinzugefügt und entfernt, während
+  alles andere weiterspielt.
+- Analog-, USB-, HDMI- und Bluetooth-Ausgaben können frei gemischt werden. Unpassende
+  Sampleraten werden im Vorbeigehen umgerechnet (eine 192-kHz-Ausgabe kann ein
+  48-kHz-Headset füttern).
+- Unabhängige Lautstärke pro Ziel. Fader greifen hinter dem Punkt, an dem die Kopie
+  abgenommen wird, deshalb sind die Pegel wirklich getrennt. Wendet ein Treiber Gain vor
+  diesem Punkt an, sagt es das Fenster, statt auf die Kontrolle zu tun.
+- Übersteht Änderungen: Wechsel der Hauptausgabe mitten im Betrieb, und der Spiegel folgt;
+  ein abgezogenes Ziel bleibt gelistet. Mit offenem Fenster meldet es sich von selbst
+  zurück; ohne Fenster und ohne Kommando übernimmt das nächste. Nichts von Mirrik beobachtet
+  Geräte von sich aus.
+- Automatisches Light/OLED-Theming aus der Light-Dark-Einstellung des Systems. Auf Windows
+  steht die Wahl beim Fenster-Start fest, weil Windows das nur einmal beim Start meldet.
+- Takt-Drift zwischen Geräten wird laufend korrigiert; über viele Stunden bleibt als einzige
+  Spur ein gelegentlich leiser Tick.
+- Der zuletzt aktive Satz bleibt über einen Neustart gemerkt, wird aber nie von selbst
+  wiederhergestellt: das Fenster bietet ihn an, und `Space` übernimmt ihn. Spiegeln bleibt
+  eine bewusste Handlung.
+
+## Latenz
+
+- Gespiegeltes Ziel läuft rund 30 ms hinter der Quelle auf Windows, 42 ms auf Linux.
+  Gemessen pro Ziel, nicht geschätzt, und im Fenster angezeigt.
+- Bluetooth-Ziele addieren grob 200 ms eigener Pufferung obendrauf und sind im Fenster so
+  markiert.
+
+## Einrichtung
+
+Linux, geführt:
+
+    git clone https://github.com/Kris-023/mirrik.git
+    cd mirrik
+    ./install.sh
+
+Braucht PipeWire (prüfen mit `pactl info | grep 'Server Name'`) und die Werkzeuge `pactl`,
+`pw-cli`, `pw-dump`, `pw-metadata`. Kein root. Das Skript erkennt den Compositor (Hyprland,
+Sway, i3, GNOME, KDE und andere) für ein Tastenkürzel und erkennt für Paket-Hinweise Debian,
+Ubuntu, Fedora (inklusive rpm-ostree), Arch, openSUSE, Alpine, Void, Gentoo und NixOS. Es hat
+bewusst kein `--uninstall`-Flag: es druckt nur je Befehle, die du selbst ausführst.
+
+Windows, geführt:
+
+    powershell -ExecutionPolicy Bypass -File install.ps1
+
+Keine Admin-Rechte. Vor dem Entpacken den Download gegen das veröffentlichte `SHA256SUMS`
+prüfen mit `Get-FileHash -Algorithm SHA256`. Die Programme sind nicht codesigniert, also
+warnt SmartScreen; »Weitere Informationen« wählen, dann »Trotzdem ausführen«.
+Deinstallieren mit `-Uninstall`, das zuerst alles zeigt, was es gefunden hat.
+
+Aus dem Quellcode:
+
+    cargo build --release
+
+Rust 1.95 oder neuer, eine von egui/eframe gesetzte Untergrenze, nicht von Mirrik. Der
+Workspace hält fünf Crates: `core`, `backend-linux`, `backend-windows`, `cli`, `gui`. Die
+beiden Backend-Crates sind getrennt, also zieht ein bloßes `cargo build` nur das zum
+Host-OS passende hinein.
+
+## Tastatur
+
+Das Fenster ist komplett tastaturgesteuert.
+
+| Taste | Aktion |
+|---|---|
+| `Down` `Up` oder `j` `k` | Fokus bewegen; Fader und Geräte teilen sich eine Kette |
+| `Right` `Left` oder `l` `h` | Den fokussierten Fader in 5-%-Schritten schieben |
+| `1` … `9` | Das Gerät direkt an- oder ausschalten |
+| `Enter` | Auf einem Gerät: hinzufügen oder, falls aktiv, entfernen |
+| `Space` | Auf den zuletzt benutzten Satz spiegeln; nur angeboten, solange nichts läuft |
+| `x` | Spiegeln überall stoppen |
+| `Esc` oder `q` | Fenster schließen; der Spiegel läuft weiter |
+
+Schließen des Fensters stoppt den Spiegel nicht. Nur `x` tut das.
+
+`Space` wendet den letzten Satz der Ziele wieder an. Er wird angeboten, nie von selbst
+aktiviert: die Zeilen sagen „from last time" und bleiben aus, bis die Taste gedrückt wird.
+Ein Gerät aus dem Satz, das gerade abgesteckt ist, wird erwartet und kommt rein, sobald es
+auftaucht, solange das Fenster offen ist — nichts von Mirrik beobachtet Geräte von sich
+aus, also endet die Warte mit dem Fenster. (Die Halteprozesse pro Ziel weiter unten sind
+etwas anderes: sie existieren nur, solange der Spiegel läuft, und beobachten nichts.)
+
+## Kommandozeile
+
+    mirrik devices                  # Ausgaben listen, * markiert die aktuelle
+    mirrik on airpods               # auf ein Gerät spiegeln starten
+    mirrik on airpods hdmi          # ... oder mehrere auf einmal
+    mirrik add speakers             # ein weiteres im Lauf dazu
+    mirrik remove hdmi              # eines raus, Rest bleibt
+    mirrik toggle airpods           # hinzu, wenn abwesend, raus, wenn da
+    mirrik status                   # was läuft
+    mirrik off                      # alles stoppen
+    mirrik volume airpods 60        # Lautstärke eines Geräts lesen/setzen, 0-100
+
+Gerätenamen matchen auf jeden eindeutigen Teilstring, und ein mehrdeutiger Treffer wird
+gemeldet statt geraten. Jedes Unterkommando, das etwas meldet, akzeptiert `--json`.
+`mirrik status --quiet` liefert Exit 0, solange gespiegelt wird, sonst 1, für Shell-
+Bedingungen.
+
+## Design-Garantien
+
+Jedes gespiegelte Ziel wird von einem eigenen kleinen Hintergrundprozess offen gehalten.
+Dadurch ist „aus heißt weg" eine Garantie, kein Versprechen: stirbt der Prozess aus
+irgendeinem Grund, geht das Ziel mit. Kein Crash kann etwas überleben lassen.
+
+## Quelle
+
+- README: https://github.com/Kris-023/mirrik#readme
+- Issues: https://github.com/Kris-023/mirrik/issues
+- Lizenz: https://github.com/Kris-023/mirrik/blob/main/LICENSE

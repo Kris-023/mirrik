@@ -1,23 +1,23 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="de">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Mirrik: play one sound on two or more outputs at once</title>
-<meta name="description" content="Mirrik mirrors whatever your computer is playing to as many output devices as you like, on Windows and Linux, without creating a virtual device.">
+<title>Mirrik: ein Ton auf zwei oder mehr Ausgaben gleichzeitig</title>
+<meta name="description" content="Mirrik spiegelt, was dein Rechner gerade abspielt, auf beliebig viele Ausgabegeräte gleichzeitig — auf Windows und Linux, ohne virtuelles Gerät.">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' fill='%23f3f2f2'/%3E%3Crect x='7' y='7' width='18' height='18' fill='%23ec3013'/%3E%3C/svg%3E">
 <meta property="og:type" content="website">
-<meta property="og:title" content="Mirrik: play one sound on two or more outputs at once">
-<meta property="og:description" content="Speakers and headphones together, or two headsets for one film. No virtual device, on Windows or Linux.">
+<meta property="og:title" content="Mirrik: ein Ton auf zwei oder mehr Ausgaben gleichzeitig">
+<meta property="og:description" content="Lautsprecher und Kopfhörer zusammen, oder zwei Headsets für einen Film. Kein virtuelles Gerät, auf Windows oder Linux.">
 <meta property="og:url" content="https://kris-023.github.io/mirrik/">
 <meta property="og:image" content="https://kris-023.github.io/mirrik/assets/og-card.png">
 <meta property="og:image:width" content="1200">
 <meta property="og:image:height" content="630">
-<meta property="og:image:alt" content="The Mirrik window mirroring one source to two destinations, beside the line: one sound, every output at once.">
+<meta property="og:image:alt" content="Das Mirrik-Fenster spiegelt eine Quelle auf zwei Ziele, daneben: ein Ton, jede Ausgabe gleichzeitig.">
 <meta name="twitter:card" content="summary_large_image">
 <link rel="alternate" type="text/plain" href="llms.txt" title="Markdown for AI agents and crawlers">
-<link rel="alternate" hreflang="en" href="./">
-<link rel="alternate" hreflang="de" href="./de/">
+<link rel="alternate" hreflang="en" href="../">
+<link rel="alternate" hreflang="de" href="./">
 <script>
   /* Laeuft synchron im head: setzt das gemerkte Theme, bevor irgendetwas gezeichnet wird.
      Ohne Eintrag bleibt das Attribut weg und prefers-color-scheme entscheidet. */
@@ -467,21 +467,21 @@
     <div class="brand"><span class="dot"></span>MIRRIK</div>
     <div class="navlinks">
       <a href="#features">Features</a>
-      <a href="#how">How it works</a>
-      <a href="#install">Install</a>
+      <a href="#how">So funktioniert es</a>
+      <a href="#install">Einrichtung</a>
       <a href="#faq">FAQ</a>
       <div class="navtools">
-        <button type="button" class="iconbtn" id="theme-toggle" aria-pressed="false" aria-label="Switch to dark theme" title="Switch to dark theme">
+        <button type="button" class="iconbtn" id="theme-toggle" aria-pressed="false" aria-label="Zum Dark Theme wechseln" title="Zum Dark Theme wechseln">
           <svg class="ico-moon" viewBox="0 0 24 24" aria-hidden="true"><path d="M20 14.5A8.5 8.5 0 0 1 9.5 4a8.5 8.5 0 1 0 10.5 10.5Z"/></svg>
           <svg class="ico-sun" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4.2"/><path d="M12 2.4v2.3M12 19.3v2.3M4.2 4.2l1.6 1.6M18.2 18.2l1.6 1.6M2.4 12h2.3M19.3 12h2.3M4.2 19.8l1.6-1.6M18.2 5.8l1.6-1.6"/></svg>
         </button>
         <div class="lang" id="lang">
-          <button type="button" class="langbtn" id="lang-btn" aria-expanded="false" aria-haspopup="true" aria-controls="lang-menu">EN
+          <button type="button" class="langbtn" id="lang-btn" aria-expanded="false" aria-haspopup="true" aria-controls="lang-menu">DE
             <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>
           </button>
           <div class="langmenu" id="lang-menu" role="menu" aria-labelledby="lang-btn">
-            <a href="./" role="menuitem" aria-current="true" hreflang="en">English</a>
-            <a href="./de/" role="menuitem" hreflang="de">Deutsch</a>
+            <a href="../" role="menuitem" hreflang="en">English</a>
+            <a href="./" role="menuitem" aria-current="true" hreflang="de">Deutsch</a>
             <hr role="separator">
             <a class="md" href="llms.txt" role="menuitem">Markdown<span class="s">For AI agents &amp; crawlers</span></a>
           </div>
@@ -494,19 +494,19 @@
   <header class="hero">
     <div class="hero-copy">
       <div class="kicker accent">Open source · Windows &amp; Linux · MIT</div>
-      <h1>One sound. Every output at once.</h1>
-      <p>Watch a film with a friend on two pairs of headphones. Keep your speakers and your
-      headset running at the same time. Mirrik copies whatever is already playing to as many
-      outputs as you like, and when you switch it off, nothing is left behind.</p>
+      <h1>Ein Ton. Jede Ausgabe gleichzeitig.</h1>
+      <p>Ein Film zu zweit auf zwei Kopfhörern. Lautsprecher und Headset laufen gleichzeitig.
+      Mirrik kopiert, was gerade läuft, auf beliebig viele Ausgaben — und wenn du es ausschaltest,
+      bleibt nichts zurück.</p>
       <div class="hero-ctas">
-        <a class="btn btn-solid" href="https://github.com/Kris-023/mirrik/releases/download/v0.1.1/mirrik-0.1.1-windows-x86_64.zip">Download for Windows</a>
-        <a class="btn btn-outline" href="https://github.com/Kris-023/mirrik/releases/download/v0.1.1/mirrik-0.1.1-linux-x86_64.tar.gz">Download for Linux</a>
+        <a class="btn btn-solid" href="https://github.com/Kris-023/mirrik/releases/download/v0.1.1/mirrik-0.1.1-windows-x86_64.zip">Für Windows laden</a>
+        <a class="btn btn-outline" href="https://github.com/Kris-023/mirrik/releases/download/v0.1.1/mirrik-0.1.1-linux-x86_64.tar.gz">Für Linux laden</a>
       </div>
-      <div class="hero-meta">v0.1.1 · MIT · built in Rust</div>
+      <div class="hero-meta">v0.1.1 · MIT · in Rust gebaut</div>
     </div>
     <div class="hero-shot">
       <div class="panel" id="demo" tabindex="0" role="group"
-           aria-label="Interactive mock-up of the Mirrik window: click a destination or press 1, 2, Space or x">
+           aria-label="Interaktiver Nachbau des Mirrik-Fensters: ein Ziel anklicken oder 1, 2, Leertaste oder x drücken">
         <div class="p-focus" id="d-focus" aria-hidden="true"></div>
         <div class="p-key" id="d-key" aria-hidden="true"></div>
         <div class="p-head">
@@ -568,61 +568,61 @@
         <div class="p-rule"></div>
         <div class="p-hint"><span id="d-hint-move">up/down focus &middot; Enter add or remove &middot; 1-9 direct</span><br><span id="d-hint-leave">x stop mirroring &middot; Esc close, mirror keeps running</span></div>
       </div>
-      <div class="demo-note" id="demo-note">A working mock-up, not a screenshot. Click a row or a fader,
-        or press <kbd>1</kbd> <kbd>2</kbd> <kbd>Space</kbd> <kbd>x</kbd></div>
+      <div class="demo-note" id="demo-note">Ein bedienbarer Nachbau, kein Screenshot. Klick eine Zeile
+        oder einen Fader oder drück <kbd>1</kbd> <kbd>2</kbd> <kbd>Space</kbd> <kbd>x</kbd></div>
     </div>
   </header>
 
   <section class="stats">
-    <div><div class="stat-val">30 / 42 ms</div><div class="stat-label">typical delay, Windows / Linux</div></div>
-    <div><div class="stat-val">0</div><div class="stat-label">devices or settings left behind</div></div>
-    <div><div class="stat-val">&infin;</div><div class="stat-label">outputs at once, not just two</div></div>
-    <div><div class="stat-val">MIT</div><div class="stat-label">licence, source included</div></div>
+    <div><div class="stat-val">30 / 42 ms</div><div class="stat-label">typische Verzögerung, Windows / Linux</div></div>
+    <div><div class="stat-val">0</div><div class="stat-label">Geräte oder Einstellungen zurückgelassen</div></div>
+    <div><div class="stat-val">&infin;</div><div class="stat-label">Ausgaben gleichzeitig, nicht nur zwei</div></div>
+    <div><div class="stat-val">MIT</div><div class="stat-label">Lizenz, Quelle inklusive</div></div>
   </section>
 
   <section id="features">
     <div class="section-head">
       <div class="kicker">Features</div>
-      <h2>Everything a virtual cable does, none of the cleanup.</h2>
+      <h2>Alles, was ein virtuelles Kabel kann, ohne das Aufräumen.</h2>
     </div>
     <div class="features">
-      <div class="feature"><div class="num">01</div><h3>Mirror to as many devices as you like</h3><p>Add and remove destinations one at a time. Analogue, USB, HDMI and Bluetooth all work together, and everything else keeps playing while you do it.</p></div>
-      <div class="feature"><div class="num">02</div><h3>Nothing gets left behind</h3><p>Off really means off: no leftover virtual device, no changed default output, no service quietly running in the background.</p></div>
-      <div class="feature"><div class="num">03</div><h3>Independent volume per device</h3><p>Everyone sets their own level. Turning the speakers down doesn't touch the headphones next to them.</p></div>
-      <div class="feature"><div class="num">04</div><h3>Different sample rates? No problem</h3><p>A 192 kHz output can mirror to a 48 kHz headset. Mirrik converts on the fly so you don't have to think about it.</p></div>
-      <div class="feature"><div class="num">05</div><h3>Survives you changing things</h3><p>Switch your main output mid-session and the mirror follows. Unplug a destination and its row stays, waiting. With the window open it rejoins by itself; otherwise the next window or command picks it up.</p></div>
-      <div class="feature"><div class="num">06</div><h3>Keyboard-driven, plus a real CLI</h3><p>The window runs entirely from the keyboard. Everything it can do is also a command, with <code>--json</code> on anything that reports something.</p></div>
+      <div class="feature"><div class="num">01</div><h3>Spiegel so viele Geräte, wie du willst</h3><p>Ziele einzeln hinzufügen und entfernen. Analog, USB, HDMI und Bluetooth laufen zusammen, und alles andere spielt dabei einfach weiter.</p></div>
+      <div class="feature"><div class="num">02</div><h3>Nichts bleibt zurück</h3><p>Aus heißt wirklich aus: kein Restgerät, kein geändertes Standardausgabegerät, kein Dienst, der heimlich im Hintergrund weiterläuft.</p></div>
+      <div class="feature"><div class="num">03</div><h3>Lautstärke pro Gerät</h3><p>Alle stellen ihren eigenen Pegel ein. Wer die Lautsprecher leiser dreht, ändert nichts am Kopfhörer daneben.</p></div>
+      <div class="feature"><div class="num">04</div><h3>Verschiedene Sampleraten? Kein Problem</h3><p>Eine 192-kHz-Ausgabe kann problemlos auf ein 48-kHz-Headset spiegeln. Mirrik rechnet im Vorbeigehen um, du brauchst nicht darüber nachzudenken.</p></div>
+      <div class="feature"><div class="num">05</div><h3>Übersteht, dass du etwas änderst</h3><p>Wechselst du mitten im Betrieb die Hauptausgabe, folgt der Spiegel. Ziehst du ein Ziel ab, bleibt die Zeile stehen und wartet. Mit offenem Fenster meldet es sich von selbst zurück; sonst nimmt es das nächste Fenster oder Kommando auf.</p></div>
+      <div class="feature"><div class="num">06</div><h3>Tastaturgesteuert, plus echte CLI</h3><p>Das Fenster läuft komplett über die Tastatur. Alles, was es kann, gibt es auch als Kommando — mit <code>--json</code> auf allem, was etwas meldet.</p></div>
     </div>
   </section>
 
   <section id="how" class="how">
     <div class="how-intro">
-      <div class="kicker">How it works</div>
-      <h2>No virtual device, on either platform.</h2>
-      <p>On Windows, a WASAPI loopback client captures whatever the default output is playing
-      and pushes copies to each destination. On Linux, a PipeWire loopback taps the monitor of
-      your current sink. Neither side ever creates a device of its own. That's not an
-      implementation detail, it's the whole point. Each mirrored destination is kept alive by
-      its own small background process, so if that process ever dies, that destination is
-      simply gone. Nothing can outlive a crash.</p>
+      <div class="kicker">So funktioniert es</div>
+      <h2>Kein virtuelles Gerät, auf keiner Seite.</h2>
+      <p>Auf Windows nimmt ein WASAPI-Loopback-Client auf, was die Standardausgabe gerade
+      spielt, und schiebt Kopien an jedes Ziel. Auf Linux tappt ein PipeWire-Loopback den
+      Monitor deiner aktuellen Senke. Keine der beiden Seiten erzeugt je ein eigenes Gerät.
+      Das ist kein Implementierungsdetail, das ist der eigentliche Punkt. Jedes gespiegelte
+      Ziel wird von einem eigenen kleinen Hintergrundprozess offen gehalten — stirbt der,
+      ist das Ziel schlicht weg. Keinem Crash kann etwas überleben.</p>
     </div>
     <div>
-      <div class="step"><div class="n">1</div><div><h3>Summon the window</h3><p>One hotkey opens it, centred, ready for the keyboard: no mouse required from here on.</p></div></div>
-      <div class="step"><div class="n">2</div><div><h3>Pick your devices</h3><p><code>&uarr;</code> <code>&darr;</code> move the focus, <code>Enter</code> adds or removes, <code>&larr;</code> <code>&rarr;</code> nudge a fader in 5% steps, and <code>1</code>&ndash;<code>9</code> toggle a device directly. Had a set on last time? <code>Space</code> takes it back.</p></div></div>
-      <div class="step"><div class="n">3</div><div><h3>Close whenever</h3><p><code>Esc</code> closes the window and the mirror carries on. <code>x</code> stops it, everywhere at once.</p></div></div>
+      <div class="step"><div class="n">1</div><div><h3>Fenster herbeirufen</h3><p>Ein Tastenkürzel öffnet es, mittig, bereit für die Tastatur: ab hier keine Maus mehr.</p></div></div>
+      <div class="step"><div class="n">2</div><div><h3>Ziele auswählen</h3><p><code>&uarr;</code> <code>&darr;</code> bewegen den Fokus, <code>Enter</code> fügt hinzu oder entfernt, <code>&larr;</code> <code>&rarr;</code> schieben einen Fader in 5-%-Schritten, und <code>1</code>&ndash;<code>9</code> schalten ein Gerät direkt. Hattest du letztes Mal einen Satz an? <code>Space</code> holt ihn zurück.</p></div></div>
+      <div class="step"><div class="n">3</div><div><h3>Zumachen, wann du willst</h3><p><code>Esc</code> schließt das Fenster, der Spiegel läuft weiter. <code>x</code> stoppt ihn — überall auf einmal.</p></div></div>
     </div>
   </section>
 
   <section id="install">
     <div class="install-head">
       <div>
-        <div class="kicker">Install guide</div>
-        <h2>Pick your platform.</h2>
+        <div class="kicker">Einrichtung</div>
+        <h2>Plattform auswählen.</h2>
       </div>
       <div class="tabs" role="tablist">
         <button type="button" class="tab active" role="tab" id="tab-linux" aria-controls="panel-linux" aria-selected="true" data-platform="linux">Linux</button>
         <button type="button" class="tab" role="tab" id="tab-windows" aria-controls="panel-windows" aria-selected="false" data-platform="windows">Windows</button>
-        <button type="button" class="tab" role="tab" id="tab-source" aria-controls="panel-source" aria-selected="false" data-platform="source">Build from source</button>
+        <button type="button" class="tab" role="tab" id="tab-source" aria-controls="panel-source" aria-selected="false" data-platform="source">Aus dem Quellcode</button>
       </div>
     </div>
 
@@ -631,78 +631,78 @@
 
         <div class="platform-steps" id="panel-linux" role="tabpanel" aria-labelledby="tab-linux" data-platform="linux">
           <div class="istep">
-            <div class="istep-head"><span class="n">01</span><span class="t">Check you have PipeWire</span></div>
+            <div class="istep-head"><span class="n">01</span><span class="t">PipeWire vorhanden?</span></div>
             <pre>pactl info | grep 'Server Name'</pre>
-            <p class="note">Needs to say PipeWire. Plain PulseAudio is refused on purpose, since a crash there would leave a loopback behind for good.</p>
+            <p class="note">Muss PipeWire sagen. Reines PulseAudio wird bewusst abgelehnt, weil ein Absturz dort dauerhaft ein Loopback zurückließe.</p>
           </div>
           <div class="istep">
-            <div class="istep-head"><span class="n">02</span><span class="t">Clone and run the guided installer</span></div>
+            <div class="istep-head"><span class="n">02</span><span class="t">Klonen und den geführten Installer laufen lassen</span></div>
             <pre>git clone https://github.com/Kris-023/mirrik.git
 cd mirrik
 ./install.sh</pre>
-            <p class="note">No root needed. It checks for the four required tools first and figures out the right key binding for your compositor or desktop.</p>
+            <p class="note">Kein root nötig. Es prüft zuerst die vier Werkzeuge und findet heraus, welches Tastenkürzel für deinen Compositor oder Desktop passt.</p>
           </div>
           <div class="istep">
-            <div class="istep-head"><span class="n">03</span><span class="t">Changed your mind?</span></div>
+            <div class="istep-head"><span class="n">03</span><span class="t">Anders überlegt?</span></div>
             <pre>./install.sh
-# then pick: 2) Show me how to remove it</pre>
-            <p class="note">There is no <code>--uninstall</code> flag. The script prints the commands, you run them. It kept track of what it wrote, so the list matches your install and nothing gets missed.</p>
+# dann wählen: 2) Show me how to remove it</pre>
+            <p class="note">Es gibt bewusst kein <code>--uninstall</code>. Das Skript druckt die Befehle, du führst sie aus. Es hat mitprotokolliert, was es geschrieben hat, also passt die Liste zu deiner Installation, und nichts wird übersehen.</p>
           </div>
         </div>
 
         <div class="platform-steps" id="panel-windows" role="tabpanel" aria-labelledby="tab-windows" data-platform="windows" style="display:none">
           <div class="istep">
-            <div class="istep-head"><span class="n">01</span><span class="t">Download and check the release</span></div>
+            <div class="istep-head"><span class="n">01</span><span class="t">Release herunterladen und prüfen</span></div>
             <pre>Get-FileHash -Algorithm SHA256 mirrik-0.1.1-windows-x86_64.zip</pre>
-            <p class="note">Grab <a href="https://github.com/Kris-023/mirrik/releases/latest">the latest release</a> and compare the hash against the <code>SHA256SUMS</code> file published beside it. That proves the download arrived intact.</p>
+            <p class="note">Hol dir das <a href="https://github.com/Kris-023/mirrik/releases/latest">aktuelle Release</a> und vergleiche den Hash mit der danebenliegenden <code>SHA256SUMS</code>-Datei. Damit weißt du, dass der Download heil angekommen ist.</p>
           </div>
           <div class="istep">
-            <div class="istep-head"><span class="n">02</span><span class="t">Unpack it, then run the guided installer</span></div>
+            <div class="istep-head"><span class="n">02</span><span class="t">Entpacken, dann den geführten Installer laufen lassen</span></div>
             <pre>powershell -ExecutionPolicy Bypass -File install.ps1</pre>
-            <p class="note">Unzip it first and run this from inside that folder. No admin rights. It adds both programs to <code>PATH</code> and offers a Start-menu shortcut with a hotkey.</p>
+            <p class="note">Zuerst entpacken, dann aus dem Ordner heraus ausführen. Keine Admin-Rechte. Es hängt beide Programme an den <code>PATH</code> und bietet eine Startmenü-Verknüpfung mit Tastenkürzel an.</p>
           </div>
           <div class="istep">
-            <div class="istep-head"><span class="n">03</span><span class="t">Expect a SmartScreen prompt</span></div>
-            <p class="note">Choose <strong>More info</strong>, then <strong>Run anyway</strong>. Mirrik isn&rsquo;t code-signed, so Windows warns about it either way. The source is here if you&rsquo;d rather build it yourself.</p>
+            <div class="istep-head"><span class="n">03</span><span class="t">Mit SmartScreen-Warnung rechnen</span></div>
+            <p class="note"><strong>Weitere Informationen</strong> wählen, dann <strong>Trotzdem ausführen</strong>. Mirrik ist nicht codesigniert, also warnt Windows in jedem Fall. Der Quellcode liegt hier, falls du es lieber selbst baust.</p>
           </div>
           <div class="istep">
             <div class="istep-head"><span class="n">04</span><span class="t">Changed your mind?</span></div>
             <pre>powershell -ExecutionPolicy Bypass -File install.ps1 -Uninstall</pre>
-            <p class="note">Shows everything it found before removing any of it.</p>
+            <p class="note">Zeigt zuerst alles, was es gefunden hat, bevor etwas entfernt wird.</p>
           </div>
         </div>
 
         <div class="platform-steps" id="panel-source" role="tabpanel" aria-labelledby="tab-source" data-platform="source" style="display:none">
           <div class="istep">
-            <div class="istep-head"><span class="n">01</span><span class="t">Clone</span></div>
+            <div class="istep-head"><span class="n">01</span><span class="t">Klonen</span></div>
             <pre>git clone https://github.com/Kris-023/mirrik.git
 cd mirrik</pre>
           </div>
           <div class="istep">
-            <div class="istep-head"><span class="n">02</span><span class="t">Build</span></div>
+            <div class="istep-head"><span class="n">02</span><span class="t">Bauen</span></div>
             <pre>cargo build --release</pre>
-            <p class="note">Needs Rust 1.95 or newer. That floor comes from egui/eframe, not from Mirrik itself.</p>
+            <p class="note">Braucht Rust 1.95 oder neuer. Diese Untergrenze kommt von egui/eframe, nicht von Mirrik selbst.</p>
           </div>
           <div class="istep">
-            <div class="istep-head"><span class="n">03</span><span class="t">Install the binaries</span></div>
+            <div class="istep-head"><span class="n">03</span><span class="t">Die Programme installieren</span></div>
             <pre>install -Dm755 target/release/mirrik     ~/.local/bin/mirrik
 install -Dm755 target/release/mirrik-gui ~/.local/bin/mirrik-gui</pre>
-            <p class="note">On Windows, just put mirrik.exe and mirrik-gui.exe somewhere permanent instead.</p>
+            <p class="note">Auf Windows legst du mirrik.exe und mirrik-gui.exe stattdessen einfach an einen dauerhaften Ort.</p>
           </div>
         </div>
 
       </div>
 
       <div class="reqs">
-        <div class="kicker" id="reqs-title">Linux requirements</div>
+        <div class="kicker" id="reqs-title">Linux-Voraussetzungen</div>
         <div id="reqs-list">
-          <div class="req-row"><div class="req-k">Audio server</div><div class="req-v">PipeWire (module-loopback)</div></div>
-          <div class="req-row"><div class="req-k">Tools needed</div><div class="req-v">pactl, pw-cli, pw-dump, pw-metadata</div></div>
-          <div class="req-row"><div class="req-k">Compositors</div><div class="req-v">Hyprland, Sway, i3, GNOME, KDE, more</div></div>
+          <div class="req-row"><div class="req-k">Audioserver</div><div class="req-v">PipeWire (module-loopback)</div></div>
+          <div class="req-row"><div class="req-k">Benötigte Werkzeuge</div><div class="req-v">pactl, pw-cli, pw-dump, pw-metadata</div></div>
+          <div class="req-row"><div class="req-k">Compositoren</div><div class="req-v">Hyprland, Sway, i3, GNOME, KDE, more</div></div>
         </div>
-        <p id="reqs-note">The installer tells you exactly what to run if a tool is missing.
-        Debian, Ubuntu, Fedora (incl. rpm-ostree), Arch, openSUSE, Alpine, Void, Gentoo and
-        NixOS are all recognised.</p>
+        <p id="reqs-note">Der Installer sagt dir genau, was du starten musst, wenn ein Werkzeug fehlt.
+        Debian, Ubuntu, Fedora (inkl. rpm-ostree), Arch, openSUSE, Alpine, Void, Gentoo und
+        NixOS werden alle erkannt.</p>
       </div>
     </div>
   </section>
@@ -710,47 +710,47 @@ install -Dm755 target/release/mirrik-gui ~/.local/bin/mirrik-gui</pre>
   <section id="faq">
     <div class="section-head tight">
       <div class="kicker">FAQ</div>
-      <h2>Asked often.</h2>
+      <h2>Oft gefragt.</h2>
     </div>
     <div id="faq-list">
       <div class="faq-item open">
-        <button type="button" class="faq-q" aria-expanded="true"><span>Does mirroring add latency?</span><span class="faq-sign">–</span></button>
-        <p class="faq-a">A little: about 30 ms on Windows, 42 ms on Linux. You only hear it if two speakers share a room. Bluetooth is a different story, roughly 200 ms on top, and that one you do notice, so those destinations say so in the window.</p>
+        <button type="button" class="faq-q" aria-expanded="true"><span>Kommt beim Spiegeln Latenz dazu?</span><span class="faq-sign">–</span></button>
+        <p class="faq-a">Ein wenig: rund 30 ms auf Windows, 42 ms auf Linux. Du hörst sie nur, wenn zwei Lautsprecher im selben Raum stehen. Bluetooth ist ein anderes Thema, da kommen grob 200 ms obendrauf, und die merkt man — darum sagen es die Ziele im Fenster.</p>
       </div>
       <div class="faq-item">
-        <button type="button" class="faq-q" aria-expanded="false"><span>Can I mix Bluetooth and wired outputs?</span><span class="faq-sign">+</span></button>
-        <p class="faq-a">Yes. Analogue, USB, HDMI and Bluetooth outputs all work together, and if their sample rates don't match, Mirrik converts on the fly.</p>
+        <button type="button" class="faq-q" aria-expanded="false"><span>Kann ich Bluetooth und kabelgebundene Ausgaben mischen?</span><span class="faq-sign">+</span></button>
+        <p class="faq-a">Ja. Analog-, USB-, HDMI- und Bluetooth-Ausgaben laufen alle zusammen, und wenn ihre Sampleraten nicht passen, rechnet Mirrik im Vorbeigehen um.</p>
       </div>
       <div class="faq-item">
-        <button type="button" class="faq-q" aria-expanded="false"><span>How many devices can I mirror to?</span><span class="faq-sign">+</span></button>
-        <p class="faq-a">You're not limited to two: mix and match as many outputs as you want.</p>
+        <button type="button" class="faq-q" aria-expanded="false"><span>Auf wie viele Geräte kann ich spiegeln?</span><span class="faq-sign">+</span></button>
+        <p class="faq-a">Du bist nicht auf zwei begrenzt: kombinier so viele Ausgaben, wie du willst.</p>
       </div>
       <div class="faq-item">
-        <button type="button" class="faq-q" aria-expanded="false"><span>Does it remember my setup after a reboot?</span><span class="faq-sign">+</span></button>
-        <p class="faq-a">It keeps the set, but never switches it on again by itself. After a reboot sound plays to one device, as normal. Open the window and the rows you had on say &ldquo;from last time&rdquo;, still off. <code>Space</code> takes them.</p>
+        <button type="button" class="faq-q" aria-expanded="false"><span>Merkt es sich meinen Aufbau nach einem Neustart?</span><span class="faq-sign">+</span></button>
+        <p class="faq-a">Es behält den Satz, schaltet ihn aber nie von selbst wieder an. Nach einem Neustart läuft der Ton wie normal auf ein Gerät. Öffne das Fenster, und die Zeilen, die an waren, sagen &bdquo;from last time&ldquo;, bleiben aber aus. <code>Space</code> übernimmt sie.</p>
       </div>
       <div class="faq-item">
-        <button type="button" class="faq-q" aria-expanded="false"><span>Why does Windows warn me when I run it?</span><span class="faq-sign">+</span></button>
-        <p class="faq-a">Mirrik has no code-signing certificate; those cost real money and this is a hobby project. The dialog means &ldquo;Microsoft hasn&rsquo;t seen this program often&rdquo;, not &ldquo;this is dangerous&rdquo;. The source is in the repo if you&rsquo;d rather build it yourself.</p>
+        <button type="button" class="faq-q" aria-expanded="false"><span>Warum warnt mich Windows beim Starten?</span><span class="faq-sign">+</span></button>
+        <p class="faq-a">Mirrik hat kein Code-Signing-Zertifikat; die kosten echtes Geld, und das ist ein Hobbyprojekt. Der Dialog heißt &bdquo;Microsoft hat dieses Programm noch selten gesehen&ldquo;, nicht &bdquo;das ist gefährlich&ldquo;. Der Quellcode liegt im Repo, falls du es lieber selbst baust.</p>
       </div>
       <div class="faq-item">
-        <button type="button" class="faq-q" aria-expanded="false"><span>Why won't it run on plain PulseAudio?</span><span class="faq-sign">+</span></button>
-        <p class="faq-a">There the loopback belongs to the audio daemon. If Mirrik crashed, it would keep running with no way to clean it up. So Mirrik refuses to start and says why. PipeWire&rsquo;s PulseAudio layer is fine.</p>
+        <button type="button" class="faq-q" aria-expanded="false"><span>Warum läuft es nicht auf reinem PulseAudio?</span><span class="faq-sign">+</span></button>
+        <p class="faq-a">Dort gehört das Loopback dem Audio-Daemon. Würde Mirrik abstürzen, liefe es einfach weiter, ohne dass es sich je aufräumen ließe. Also verweigert Mirrik den Start und sagt, warum. PipeWires PulseAudio-Schicht ist in Ordnung.</p>
       </div>
       <div class="faq-item">
-        <button type="button" class="faq-q" aria-expanded="false"><span>What about macOS?</span><span class="faq-sign">+</span></button>
-        <p class="faq-a">Not yet. Nobody's written that backend.</p>
+        <button type="button" class="faq-q" aria-expanded="false"><span>Was ist mit macOS?</span><span class="faq-sign">+</span></button>
+        <p class="faq-a">Noch nicht. Das Backend dafür hat bislang niemand geschrieben.</p>
       </div>
     </div>
   </section>
 
   <section id="download" class="cta">
     <div class="cta-inner">
-      <h2>Get Mirrik. It's free, and the source is right here.</h2>
+      <h2>Hol dir Mirrik. Es ist kostenlos, und der Quellcode liegt hier.</h2>
       <div class="row">
-        <a class="btn btn-white" href="https://github.com/Kris-023/mirrik/releases/download/v0.1.1/mirrik-0.1.1-windows-x86_64.zip">Download for Windows</a>
-        <a class="btn btn-white" href="https://github.com/Kris-023/mirrik/releases/download/v0.1.1/mirrik-0.1.1-linux-x86_64.tar.gz">Download for Linux</a>
-        <a class="btn btn-invert" href="https://github.com/Kris-023/mirrik">Source on GitHub</a>
+        <a class="btn btn-white" href="https://github.com/Kris-023/mirrik/releases/download/v0.1.1/mirrik-0.1.1-windows-x86_64.zip">Für Windows laden</a>
+        <a class="btn btn-white" href="https://github.com/Kris-023/mirrik/releases/download/v0.1.1/mirrik-0.1.1-linux-x86_64.tar.gz">Für Linux laden</a>
+        <a class="btn btn-invert" href="https://github.com/Kris-023/mirrik">Quellcode auf GitHub</a>
       </div>
     </div>
   </section>
@@ -758,29 +758,29 @@ install -Dm755 target/release/mirrik-gui ~/.local/bin/mirrik-gui</pre>
   <footer>
     <div>
       <div class="fbrand"><span class="dot"></span>MIRRIK</div>
-      <p>Play the same sound on two or more output devices at once, on Windows and Linux. MIT licensed.</p>
+      <p>Denselben Ton auf zwei oder mehr Ausgabegeräten gleichzeitig abspielen, auf Windows und Linux. MIT-lizenziert.</p>
     </div>
     <div class="fcol">
-      <div class="fcol-title">Product</div>
+      <div class="fcol-title">Produkt</div>
       <a href="#features">Features</a>
       <a href="#how">How it works</a>
       <a href="#install">Install</a>
     </div>
     <div class="fcol">
-      <div class="fcol-title">Docs</div>
-      <a href="https://github.com/Kris-023/mirrik#getting-it-installed">Install guide</a>
-      <a href="https://github.com/Kris-023/mirrik#using-it-day-to-day">Keyboard shortcuts</a>
-      <a href="https://github.com/Kris-023/mirrik#the-command-line">CLI reference</a>
+      <div class="fcol-title">Doku</div>
+      <a href="https://github.com/Kris-023/mirrik#getting-it-installed">Einrichtung</a>
+      <a href="https://github.com/Kris-023/mirrik#using-it-day-to-day">Tastenkürzel</a>
+      <a href="https://github.com/Kris-023/mirrik#the-command-line">CLI-Referenz</a>
     </div>
     <div class="fcol">
-      <div class="fcol-title">Project</div>
+      <div class="fcol-title">Projekt</div>
       <a href="https://github.com/Kris-023/mirrik">GitHub</a>
       <a href="https://github.com/Kris-023/mirrik/issues">Issues</a>
-      <a href="https://github.com/Kris-023/mirrik/blob/main/LICENSE">Licence</a>
+      <a href="https://github.com/Kris-023/mirrik/blob/main/LICENSE">Lizenz</a>
     </div>
   </footer>
 
-  <div class="bottom">© 2026 Kris-023 · MIT · built in Rust with egui</div>
+  <div class="bottom">© 2026 Kris-023 · MIT · in Rust mit egui gebaut</div>
 </div>
 
 <script>
@@ -856,32 +856,32 @@ install -Dm755 target/release/mirrik-gui ~/.local/bin/mirrik-gui</pre>
       if (reqs_box) { reqs_box.classList.add('is-swap'); setTimeout(() => reqs_box.classList.remove('is-swap'), 220); }
       const reqs = {
         linux: {
-          title: 'Linux requirements',
-          note: 'The installer tells you exactly what to run if a tool is missing. Debian, Ubuntu, Fedora (incl. rpm-ostree), Arch, openSUSE, Alpine, Void, Gentoo and NixOS are all recognised.',
+          title: 'Linux-Voraussetzungen',
+          note: 'Der Installer sagt dir genau, was du starten musst, wenn ein Werkzeug fehlt. Debian, Ubuntu, Fedora (inkl. rpm-ostree), Arch, openSUSE, Alpine, Void, Gentoo und NixOS werden alle erkannt.',
           rows: [
-            ['Audio server', 'PipeWire (module-loopback)'],
-            ['Tools needed', 'pactl, pw-cli, pw-dump, pw-metadata'],
-            ['Compositors', 'Hyprland, Sway, i3, GNOME, KDE, more']
+            ['Audioserver', 'PipeWire (module-loopback)'],
+            ['Benötigte Werkzeuge', 'pactl, pw-cli, pw-dump, pw-metadata'],
+            ['Compositoren', 'Hyprland, Sway, i3, GNOME, KDE, weitere']
           ]
         },
         windows: {
-          title: 'Windows requirements',
-          note: 'The installer checks your Windows version, architecture and display driver before it copies anything. The window itself is OpenGL and may not open over Remote Desktop.',
+          title: 'Windows-Voraussetzungen',
+          note: 'Der Installer prüft deine Windows-Version, Architektur und den Grafiktreiber, bevor er irgendetwas kopiert. Das Fenster selbst ist OpenGL und kann über Remote Desktop eventuell nicht aufgehen.',
           rows: [
-            ['OS', 'Windows 10 or 11'],
-            ['Audio API', 'WASAPI loopback'],
-            ['Admin rights', 'not required'],
-            ['Code signing', 'none (expect a SmartScreen prompt)']
+            ['OS', 'Windows 10 oder 11'],
+            ['Audio-API', 'WASAPI Loopback'],
+            ['Admin-Rechte', 'nicht nötig'],
+            ['Code-Signierung', 'keine (eine SmartScreen-Warnung erwarten)']
           ]
         },
         source: {
-          title: 'Source requirements',
-          note: 'The same tree builds mirrik (CLI) and mirrik-gui (window) for whichever platform you\'re on. The two backend crates are separate, so a bare cargo build only pulls in the one matching your OS.',
+          title: 'Voraussetzungen beim Selbstbau',
+          note: 'Derselbe Baum baut mirrik (CLI) und mirrik-gui (Fenster) für die jeweilige Plattform. Die beiden Backend-Crates sind getrennt, darum zieht ein bloßes cargo build nur das zum eigenen System passende hinein.',
           rows: [
-            ['Rust', '1.95 or newer (stable)'],
-            ['Linux extra', 'C linker + ALSA and X11/Wayland headers'],
-            ['Windows extra', 'MSVC build tools'],
-            ['Workspace', '5 crates: core, backend-linux, backend-windows, cli, gui']
+            ['Rust', '1.95 oder neuer (stable)'],
+            ['Linux-Extra', 'C-Linker + ALSA- und X11/Wayland-Header'],
+            ['Windows-Extra', 'MSVC-Build-Tools'],
+            ['Workspace', '5 Crates: core, backend-linux, backend-windows, cli, gui']
           ]
         }
       };
@@ -1149,8 +1149,8 @@ install -Dm755 target/release/mirrik-gui ~/.local/bin/mirrik-gui</pre>
     if (taken) return;
     taken = true;
     if (wake) wake();
-    el.hint.innerHTML = 'Yours now: <kbd>1</kbd> <kbd>2</kbd> toggle, ' +
-                        '<kbd>Space</kbd> last set, <kbd>x</kbd> stop';
+    el.hint.innerHTML = 'Deins jetzt: <kbd>1</kbd> <kbd>2</kbd> schalten, ' +
+                        '<kbd>Space</kbd> letzter Satz, <kbd>x</kbd> Stopp';
   }
 
   panel.setAttribute('data-live', '');
