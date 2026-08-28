@@ -102,12 +102,16 @@
   .langmenu{position:absolute;top:calc(100% + 9px);right:0;z-index:30;min-width:248px;padding:9px 0;background:var(--menu-bg);border:2px solid var(--line);display:none}
   .lang.open .langmenu{display:block}
   .langmenu a{display:block;padding:12px 22px;font:600 13px/1 Archivo,sans-serif;letter-spacing:.16em;text-transform:uppercase;color:var(--ink)}
-  /* Reihenfolge zaehlt: :hover und [aria-current] haben dieselbe Spezifitaet,
+  /* Spezifitaet zaehlt: die .navlinks-Hover-Regel oben ist spezifischer als ein
+     nacktes '.langmenu a:hover' und setzt color --accent-dark, was auf dem
+     --accent-dark-Hintergrund unsichtbar wird. Deshalb .navlinks im Selektor
+     mitschleppen, sonst gewinnt der generische Link-Hover. */
+  /* Ausserdem Reihenfolge: :hover und [aria-current] haben dieselbe Spezifitaet,
      also muss der Hover-Zustand zuletzt stehen, sonst bleibt die aktive
      Sprache orange auf orangem Grund. */
   .langmenu a[aria-current="true"]{color:var(--accent)}
-  .langmenu a:hover,
-  .langmenu a[aria-current="true"]:hover{background:var(--accent-dark);color:var(--on-accent)}
+  .navlinks .langmenu a:hover,
+  .navlinks .langmenu a[aria-current="true"]:hover{background:var(--accent-dark);color:var(--on-accent)}
   .langmenu hr{margin:9px 0;border:0;border-top:2px solid var(--rule)}
   .langmenu .md .s{display:block;margin-top:6px;font:400 11.5px/1.3 'JetBrains Mono',monospace;letter-spacing:0;text-transform:none;color:var(--muted-2)}
 
