@@ -64,7 +64,7 @@ so Mirrik just asks it.
 | **Linux (PulseAudio only)** | no | Mirrik will refuse and tell you why. On plain PulseAudio, a crash would leave a loopback behind for good — not a risk worth taking |
 | **macOS** | not yet | Nobody's written that backend |
 
-You're not limited to two devices, either — mix and match as many as you want. Analogue, USB,
+You're not limited to two devices, either: mix and match as many as you want. Analogue, USB,
 HDMI, and Bluetooth outputs all work together. If their sample rates don't match, Mirrik
 converts them on the fly so you don't have to think about it.
 
@@ -78,7 +78,7 @@ converts them on the fly so you don't have to think about it.
   anyone else's.
 - **Different sample rates? No problem.** A 192 kHz output can happily mirror to a 48 kHz
   headset.
-- **Low delay**, and it's measured, not guessed — shown per destination (typically 30 ms on
+- **Low delay**, and it's measured, not guessed; shown per destination (typically 30 ms on
   Windows, 42 ms on Linux). Bluetooth adds roughly 200 ms of its own, and Mirrik labels those
   destinations so you know before you notice it in your ears.
 - **Survives you changing things.** Switch your main output mid-session and the mirror
@@ -88,7 +88,7 @@ converts them on the fly so you don't have to think about it.
   for devices on your behalf.
 - **Matches your system theme** automatically, light or OLED black.
 - **Fully keyboard-driven window**, plus a proper command line with `--json` on everything
-  that reports something — script it however you like.
+  that reports something, so script it however you like.
 
 ![A destination that has gone away, still listed and ready to resume](screenshots/gui-away.png)
 
@@ -174,7 +174,7 @@ running `.exe` anyway. Say no to the confirmation and it leaves everything untou
 > **Windows protected your PC** — Microsoft Defender SmartScreen prevented an unrecognised
 > app from starting.
 
-Don't panic — there's no *Run* button on that dialog on purpose, but you're not stuck.
+Don't panic: there's no *Run* button on that dialog on purpose, but you're not stuck.
 Click **More info → Run anyway**.
 
 What this actually means is *"Microsoft hasn't seen this program very often"*, not *"this
@@ -251,7 +251,7 @@ install -Dm755 target/release/mirrik-gui ~/.local/bin/mirrik-gui
 Needs Rust 1.95 or newer (`rustup update` if you're not sure) — that floor comes from
 `egui`/`eframe`, not from anything Mirrik itself does.
 
-Then bind the window to a key — that's really the intended way to use Mirrik day to day.
+Then bind the window to a key; that's really the intended way to use Mirrik day to day.
 Hyprland, as an example:
 
 ```
@@ -313,7 +313,7 @@ mirrik off                      # stop everything
 mirrik volume airpods 60        # read or set a device's volume, 0-100
 ```
 
-You don't need to type the full device name — any unique part of it works, so `airpods` is
+You don't need to type the full device name, any unique part works, so `airpods` is
 plenty. If that matches more than one device, Mirrik just tells you so instead of guessing
 which one you meant.
 
