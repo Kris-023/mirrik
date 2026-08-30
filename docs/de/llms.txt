@@ -74,7 +74,7 @@ Braucht PipeWire (prüfen mit `pactl info | grep 'Server Name'`) und die Werkzeu
 `pw-cli`, `pw-dump`, `pw-metadata`. Kein root. Das Skript erkennt den Compositor (Hyprland,
 Sway, i3, GNOME, KDE und andere) für ein Tastenkürzel und erkennt für Paket-Hinweise Debian,
 Ubuntu, Fedora (inklusive rpm-ostree), Arch, openSUSE, Alpine, Void, Gentoo und NixOS. Es hat
-bewusst kein `--uninstall`-Flag: es druckt nur je Befehle, die du selbst ausführst.
+bewusst kein `--uninstall`-Flag: es druckt nur die Befehle, die du selbst ausführst.
 
 Windows, geführt:
 
@@ -111,7 +111,7 @@ Das Fenster ist komplett tastaturgesteuert.
 Schließen des Fensters stoppt den Spiegel nicht. Nur `x` tut das.
 
 `Space` wendet den letzten Satz der Ziele wieder an. Er wird angeboten, nie von selbst
-aktiviert: die Zeilen sagen „from last time" und bleiben aus, bis die Taste gedrückt wird.
+aktiviert: die Zeilen sagen „from last time“ und bleiben aus, bis die Taste gedrückt wird.
 Ein Gerät aus dem Satz, das gerade abgesteckt ist, wird erwartet und kommt rein, sobald es
 auftaucht, solange das Fenster offen ist — nichts von Mirrik beobachtet Geräte von sich
 aus, also endet die Warte mit dem Fenster. (Die Halteprozesse pro Ziel weiter unten sind

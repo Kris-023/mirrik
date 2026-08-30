@@ -9,7 +9,7 @@
 <meta property="og:type" content="website">
 <meta property="og:title" content="Mirrik: ein Ton auf zwei oder mehr Ausgaben gleichzeitig">
 <meta property="og:description" content="Lautsprecher und Kopfhörer zusammen, oder zwei Headsets für einen Film. Kein virtuelles Gerät, auf Windows oder Linux.">
-<meta property="og:url" content="https://kris-023.github.io/mirrik/">
+<meta property="og:url" content="https://kris-023.github.io/mirrik/de/">
 <meta property="og:image" content="https://kris-023.github.io/mirrik/assets/og-card.png">
 <meta property="og:image:width" content="1200">
 <meta property="og:image:height" content="630">
@@ -670,7 +670,7 @@ cd mirrik
             <p class="note"><strong>Weitere Informationen</strong> wählen, dann <strong>Trotzdem ausführen</strong>. Mirrik ist nicht codesigniert, also warnt Windows in jedem Fall. Der Quellcode liegt hier, falls du es lieber selbst baust.</p>
           </div>
           <div class="istep">
-            <div class="istep-head"><span class="n">04</span><span class="t">Changed your mind?</span></div>
+            <div class="istep-head"><span class="n">04</span><span class="t">Anders überlegt?</span></div>
             <pre>powershell -ExecutionPolicy Bypass -File install.ps1 -Uninstall</pre>
             <p class="note">Zeigt zuerst alles, was es gefunden hat, bevor etwas entfernt wird.</p>
           </div>
@@ -702,7 +702,7 @@ install -Dm755 target/release/mirrik-gui ~/.local/bin/mirrik-gui</pre>
         <div id="reqs-list">
           <div class="req-row"><div class="req-k">Audioserver</div><div class="req-v">PipeWire (module-loopback)</div></div>
           <div class="req-row"><div class="req-k">Benötigte Werkzeuge</div><div class="req-v">pactl, pw-cli, pw-dump, pw-metadata</div></div>
-          <div class="req-row"><div class="req-k">Compositoren</div><div class="req-v">Hyprland, Sway, i3, GNOME, KDE, more</div></div>
+          <div class="req-row"><div class="req-k">Compositoren</div><div class="req-v">Hyprland, Sway, i3, GNOME, KDE, weitere</div></div>
         </div>
         <p id="reqs-note">Der Installer sagt dir genau, was du starten musst, wenn ein Werkzeug fehlt.
         Debian, Ubuntu, Fedora (inkl. rpm-ostree), Arch, openSUSE, Alpine, Void, Gentoo und
@@ -767,8 +767,8 @@ install -Dm755 target/release/mirrik-gui ~/.local/bin/mirrik-gui</pre>
     <div class="fcol">
       <div class="fcol-title">Produkt</div>
       <a href="#features">Features</a>
-      <a href="#how">How it works</a>
-      <a href="#install">Install</a>
+      <a href="#how">So funktioniert es</a>
+      <a href="#install">Einrichtung</a>
     </div>
     <div class="fcol">
       <div class="fcol-title">Doku</div>
@@ -906,7 +906,7 @@ install -Dm755 target/release/mirrik-gui ~/.local/bin/mirrik-gui</pre>
   const activeTheme = () => root.getAttribute('data-theme') || (darkQuery.matches ? 'dark' : 'light');
   function syncTheme(){
     const dark = activeTheme() === 'dark';
-    const label = dark ? 'Switch to light theme' : 'Switch to dark theme';
+    const label = dark ? 'Zum Light Theme wechseln' : 'Zum Dark Theme wechseln';
     themeBtn.setAttribute('aria-pressed', String(dark));
     themeBtn.setAttribute('aria-label', label);
     themeBtn.title = label;
