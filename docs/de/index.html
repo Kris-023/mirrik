@@ -116,12 +116,16 @@
   .langmenu .md .s{display:block;margin-top:6px;font:400 11.5px/1.3 'JetBrains Mono',monospace;letter-spacing:0;text-transform:none;color:var(--muted-2)}
 
   header.hero{display:grid;grid-template-columns:1.15fr .85fr;border-bottom:2px solid var(--line)}
-  .hero-copy{display:flex;flex-direction:column;justify-content:center;padding:64px 40px;border-right:2px solid var(--line)}
+  /* Both grid children get min-width:0 so a grid track never inflates past its fr share
+     just because something inside it is nowrap (the demo panel's headline, mainly - see
+     .p-title below). Without it, at some window widths the two Download buttons flipped
+     between one row and two every time the demo panel's headline text changed length. */
+  .hero-copy{display:flex;flex-direction:column;justify-content:center;padding:64px 40px;border-right:2px solid var(--line);min-width:0}
   .hero-copy h1{font:700 clamp(38px,5vw,60px)/1.02 Archivo,sans-serif;max-width:14ch;text-wrap:balance}
   .hero-copy p{margin:24px 0 0;max-width:52ch;color:var(--muted)}
   .hero-ctas{display:flex;flex-wrap:wrap;gap:12px;margin-top:32px}
   .hero-meta{margin-top:20px;font:400 11.5px/1.6 'JetBrains Mono',monospace;color:var(--muted-2)}
-  .hero-shot{padding:40px;display:flex;align-items:center;justify-content:center;background:var(--surface)}
+  .hero-shot{padding:40px;display:flex;align-items:center;justify-content:center;background:var(--surface);min-width:0}
 
   /* ── App-Panel ──────────────────────────────────────────────────────────
      Nachbau des echten Mirrik-Fensters, abgenommen an gui-light.png,
@@ -136,7 +140,7 @@
     --p-bg:#f3f2f2; --p-ink:#201e1d; --p-rule:#201e1d; --p-accent:#d42b11; --p-on-accent:#fff;
     --p-font:Archivo,sans-serif; --p-brand:var(--p-ink);
     --p-title:700 25px/1.05 Archivo,sans-serif; --p-name-fs:13.5px; --p-name-w:600;
-    width:100%;max-width:430px;background:var(--p-bg);color:var(--p-ink);
+    width:100%;max-width:430px;min-width:0;background:var(--p-bg);color:var(--p-ink);
     border:2px solid var(--p-rule);font-family:var(--p-font);user-select:none}
   :root[data-theme="dark"] .panel{
     --p-bg:#000; --p-ink:#e8e8e8; --p-rule:#2a2a2a; --p-accent:#d06a4d; --p-on-accent:#0d0c0c;
@@ -156,7 +160,7 @@
   .p-head-top{display:flex;align-items:flex-start;justify-content:space-between;gap:16px}
   .p-head-l{display:flex;gap:12px;align-items:flex-start;min-width:0}
   .p-dot{width:12px;height:12px;margin-top:6px;flex:none;background:var(--p-accent)}
-  .p-title{font:var(--p-title);letter-spacing:-.02em;white-space:nowrap}
+  .p-title{font:var(--p-title);letter-spacing:-.02em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   .p-brand{font:500 11px/1 'JetBrains Mono',monospace;letter-spacing:.22em;margin-right:-.22em;padding-top:5px;flex:none;color:var(--p-brand)}
   .p-sub{margin:6px 0 0 24px;font:400 9.5px/1.3 var(--p-font);letter-spacing:.14em;text-transform:uppercase;
     color:color-mix(in srgb,var(--p-ink) 50%,transparent);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
